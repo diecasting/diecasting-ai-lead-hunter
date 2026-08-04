@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 from app.ai.keywords import INDUSTRIES as _ALL_INDUSTRIES
 from app.config import settings
 from app.outreach.contact_role_detector import detect_primary_role
+from app.outreach.context import build_context
 
 # ��─ Template directory ────────────────────────────────────────────────────
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -43,6 +44,42 @@ _INDUSTRY_TEMPLATE: Dict[str, str] = {
     "tooling": "tooling.md",
     "mold": "tooling.md",
 }
+
+
+# ── Role → role-specific prompt template mapping (Phase 4 Stage 2) ──────────
+# Purchasing Manager: cost / supply chain / capacity
+# Engineering:        tolerance / material / process
+# Supplier Quality:   quality system / PPAP / certification
+_ROLE_TEMPLATE: Dict[str, str] = {
+    "purchasing manager": "purchasing_manager.md",
+    "purchasing": "purchasing_manager.md",
+    "strategic sourcing": "purchasing_manager.md",
+    "strategic sourcing manager": "purchasing_manager.md",
+    "procurement": "purchasing_manager.md",
+    "buyer": "purchasing_manager.md",
+    "engineering manager": "engineering.md",
+    "engineering": "engineering.md",
+    "component engineering": "engineering.md",
+    "supplier quality": "supplier_quality.md",
+    "supplier quality manager": "supplier_quality.md",
+    "supplier development": "supplier_quality.md",
+    "sqe": "supplier_quality.md",
+    "quality": "supplier_quality.md",
+}
+
+
+def _detect_role_template(role_text: str) -> str:
+    """Map a free-form role string to a role-specific template filename.
+
+    Returns the role template filename, or "role_generic.md" as fallback.
+    """
+    lowered = (role_text or "").lower()
+    # Longest key first so "strategic sourcing manager" beats "purchasing".
+    sorted_keys = sorted(_ROLE_TEMPLATE.keys(), key=len, reverse=True)
+    for key in sorted_keys:
+        if key in lowered:
+            return _ROLE_TEMPLATE[key]
+    return "role_generic.md"
 
 
 def _detect_industry(industry_text: str) -> str:
@@ -104,6 +141,93 @@ def _fill_template(template_md: str, variables: Dict[str, str]) -> Dict[str, str
         body_parts.append(value_prop)
 
     body = "\n\n".join(body_parts) if body_parts else ""
+
+    return {
+        "subject": subject.strip(),
+        "opening": opening.strip(),
+        "body": body.strip(),
+        "call_to_action": cta.strip(),
+    }
+
+
+def _context_variables(context) -> Dict[str, str]:
+    """Build the template variable dict from a CustomerContext.
+
+    Surfaces company-specific signals (materials, process, procurement type,
+    PDF-derived intelligence) so the rendered copy reads personalised rather
+    than boilerplate.
+    """
+    ctx = context
+    # Company-specific signal line (procurement + pdf intelligence).
+    signals = []
+    if ctx.materials:
+        signals.append(f"materials: {ctx.materials}")
+    if ctx.manufacturing_process:
+        signals.append(f"process: {ctx.manufacturing_process}")
+    if ctx.procurement_type:
+        signals.append(f"procurement focus: {ctx.procurement_type}")
+    if ctx.pdf_types:
+        signals.append(f"documents: {', '.join(ctx.pdf_types)}")
+    company_signals = "; ".join(signals)
+
+    return {
+        "company": ctx.company or "your company",
+        "industry": ctx.industry or "",
+        "country": ctx.country or "",
+        "business_type": ctx.business_type or "",
+        "products": ctx.products or ctx.description or "",
+        "materials": ctx.materials or "",
+        "manufacturing_process": ctx.manufacturing_process or "",
+        "contact_role": ctx.contact_role or "",
+        "buying_signal": ctx.buying_signal or "",
+        "company_signals": company_signals,
+        "lead_score": str(ctx.lead_score if ctx.lead_score is not None else ""),
+        "priority": ctx.priority or "",
+    }
+
+
+def _fill_role_template(role_template_md: str, variables: Dict[str, str]) -> Dict[str, str]:
+    """Render a role-specific template into subject / opening / body / cta.
+
+    Unlike the industry template, the role template already carries a
+    "Role Context" and "Key Messages" section; we surface the company-specific
+    signals inside the opening and body so the message is personalised.
+    """
+    subject = _extract_section(role_template_md, "Subject")
+    role_context = _extract_section(role_template_md, "Role Context")
+    key_messages = _extract_section(role_template_md, "Key Messages to Highlight")
+    cta = _extract_section(role_template_md, "Suggested Call to Action")
+
+    company = variables.get("company", "your company")
+    company_signals = variables.get("company_signals", "")
+
+    # Personalised opening: greet by company + state why we reached this role.
+    role_hint = ""
+    if role_context:
+        role_hint = " " + role_context.split("\n")[0].strip()
+    opening = (
+        f"Dear {company} Team,\n\n"
+        f"I'm reaching out to your team because we specialise in precision die "
+        f"casting and CNC machining that aligns with {company}'s programs."
+    )
+    if company_signals:
+        opening += f" Based on what we know of {company} ({company_signals}), there is a clear fit for a technical and commercial discussion."
+
+    # Body: role key messages + company-specific signals.
+    body_parts = []
+    if key_messages:
+        body_parts.append("How we can support " + company + ":\n\n" + key_messages)
+    if company_signals:
+        body_parts.append(
+            "Specifically for " + company + ", the relevant signals are: " + company_signals + "."
+        )
+    body = "\n\n".join(body_parts)
+
+    # Variable substitution (handles {company} placeholders in subject/cta).
+    for var, val in variables.items():
+        placeholder = "{" + var + "}"
+        subject = subject.replace(placeholder, str(val))
+        cta = cta.replace(placeholder, str(val))
 
     return {
         "subject": subject.strip(),
@@ -186,6 +310,7 @@ def generate_email(
     language: str = "en",
     tone: str = "professional",
     use_llm: bool = True,
+    context: Any = None,
 ) -> Dict[str, str]:
     """Generate a personalised B2B sales outreach email.
 
@@ -196,9 +321,12 @@ def generate_email(
         language: Target language ("en" supported; others fall back to en).
         tone: "professional", "friendly", or "direct".
         use_llm: When True and OPENAI_API_KEY is set, refine via OpenAI.
+        context: Optional :class:`CustomerContext` (Phase 4 Stage 2). When
+            supplied, the email is personalised with industry context, company
+            signals, and role-specific messaging from the role template.
 
     Returns:
-        Dict with keys: subject, opening, body, call_to_action.
+        Dict with keys: subject, opening, body, call_to_action, contact_role.
     """
     company = str(lead_intelligence.get("company") or "")
     industry = str(lead_intelligence.get("industry") or "")
@@ -209,27 +337,56 @@ def generate_email(
     reason = str(lead_intelligence.get("reason") or "")
     business_type = str(lead_intelligence.get("business_type") or "")
 
-    # Detect contact role
-    contact_role = detect_primary_role(
-        industry=industry,
-        business_type=business_type,
-        buying_signal=buying_signal,
-    )
+    # Detect contact role (from context if provided, else from profile).
+    if context is not None and getattr(context, "contact_role", None):
+        contact_role = context.contact_role
+    else:
+        contact_role = detect_primary_role(
+            industry=industry,
+            business_type=business_type,
+            buying_signal=buying_signal,
+        )
 
-    # Select and load template
+    # Build the CustomerContext once (from explicit context or a thin wrapper).
+    if context is None:
+        ctx = build_context(
+            company=company,
+            industry=industry,
+            country=str(lead_intelligence.get("country") or ""),
+            business_type=business_type,
+            products=products,
+            materials=materials,
+            manufacturing_process=mfg_process,
+            description=str(lead_intelligence.get("description") or ""),
+            contact_role=contact_role,
+            buying_signal=buying_signal,
+        )
+    else:
+        ctx = context
+
+    variables = _context_variables(ctx)
+
+    # --- Role-specific personalization (Stage 2) ---------------------------
+    role_template_filename = _detect_role_template(contact_role)
+    role_template_md = _load_template(role_template_filename)
+    role_version = _fill_role_template(role_template_md, variables)
+
+    # Industry template is still used as the company/process baseline and as
+    # LLM guidance.
     template_filename = _detect_industry(industry)
     template_md = _load_template(template_filename)
+    industry_version = _fill_template(template_md, variables)
+    industry_version["contact_role"] = contact_role
 
-    # Build variables for template rendering
-    variables: Dict[str, str] = {
-        "company": company or "your company",
-    }
-
-    # Render the deterministic version first (used as fallback / guidance)
-    deterministic = _fill_template(template_md, variables)
+    # Deterministic result prefers the role-specific copy when it produced a
+    # non-empty body; otherwise falls back to the industry template.
+    if role_version["body"]:
+        deterministic = role_version
+    else:
+        deterministic = industry_version
     deterministic["contact_role"] = contact_role
 
-    # Try LLM enrichment
+    # Try LLM enrichment with full context (role guidance + company signals).
     if use_llm and settings.openai_api_key:
         try:
             prompt_data: Dict[str, Any] = {
@@ -242,10 +399,10 @@ def generate_email(
                 "reason": reason,
                 "contact_role": contact_role,
                 "language": language,
-                "template_guidance": template_md[:2000],
+                "company_signals": variables.get("company_signals", ""),
+                "template_guidance": role_template_md[:2000],
             }
             llm_result = _openai_email(prompt_data)
-            # Merge: use LLM if it produced non-empty output, else fall back
             result = {
                 "subject": llm_result.get("subject") or deterministic["subject"],
                 "opening": llm_result.get("opening") or deterministic["opening"],
@@ -276,5 +433,15 @@ def generate_email_from_lead(
         "buying_signal": lead.buying_signal or "",
         "reason": lead.ai_summary or "",
         "business_type": lead.business_type or "",
+        "country": lead.country or "",
+        "description": lead.description or "",
     }
-    return generate_email(intelligence, use_llm=use_llm)
+    # Build a full CustomerContext (reads related contacts / documents when db
+    # is available) so the email is role- and company-personalised.
+    try:
+        from app.outreach.context import build_context_from_lead
+
+        context = build_context_from_lead(lead, db=db)
+    except Exception:
+        context = None
+    return generate_email(intelligence, use_llm=use_llm, context=context)
