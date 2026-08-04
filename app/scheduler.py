@@ -17,7 +17,7 @@ scheduler = BackgroundScheduler(timezone="UTC")
 
 
 def _job() -> None:
-    """Open a DB session and run the full pipeline (used by the cron job)."""
+    """Open a DB session and run the full pipeline + outreach automation."""
     db = SessionLocal()
     try:
         # Imported lazily to avoid a circular import at module load time.
@@ -25,6 +25,14 @@ def _job() -> None:
 
         report = run_full_pipeline(db)
         print(f"[scheduler] daily pipeline finished: {report}")
+
+        # Phase 2.5: process HIGH-priority new leads through the outreach
+        # workflow (generate email + schedule follow-ups). Dry-run by default;
+        # set SMTP_* in the environment and pass dry_run=False to actually send.
+        from app.outreach.workflow import run_daily_pipeline
+
+        outreach_report = run_daily_pipeline(db, dry_run=True)
+        print(f"[scheduler] outreach automation finished: {outreach_report}")
     except Exception as exc:  # pragma: no cover - depends on live services
         print(f"[scheduler] pipeline error: {exc}")
     finally:

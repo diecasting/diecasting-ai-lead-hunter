@@ -1,7 +1,7 @@
 """OutreachMessage ORM model — stores generated sales emails per lead."""
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -27,6 +27,15 @@ class OutreachMessage(Base):
     status = Column(
         String(20), nullable=False, default="draft", server_default="draft", index=True
     )  # draft | approved | sent | replied
+
+    # Sending tracking (Phase 2.5)
+    sent_time = Column(DateTime(timezone=True), nullable=True)
+    sender = Column(String(255), nullable=True)
+    recipient = Column(String(255), nullable=True)
+    is_followup = Column(
+        Boolean, nullable=False, default=False, server_default="0", index=True
+    )
+    followup_seq = Column(Integer, nullable=False, default=0, server_default="0")
 
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 

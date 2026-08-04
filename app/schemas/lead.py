@@ -17,6 +17,8 @@ class CompanyLeadBase(BaseModel):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     source: Optional[str] = None
+    lead_status: Optional[str] = "new"
+    sales_priority: Optional[str] = None
 
 
 class CompanyLeadCreate(CompanyLeadBase):
@@ -37,6 +39,8 @@ class CompanyLeadUpdate(BaseModel):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     source: Optional[str] = None
+    lead_status: Optional[str] = None
+    sales_priority: Optional[str] = None
 
 
 class CompanyLeadRead(CompanyLeadBase):
@@ -57,6 +61,9 @@ class CompanyLeadRead(CompanyLeadBase):
     materials: Optional[str] = None
     manufacturing_process: Optional[str] = None
     buying_signal: Optional[str] = None
+    lead_status: str = "new"
+    last_activity_time: Optional[datetime] = None
+    next_followup_date: Optional[datetime] = None
     ai_score: Optional[float] = None
     ai_relevant: Optional[bool] = None
     ai_summary: Optional[str] = None

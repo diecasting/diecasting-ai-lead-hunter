@@ -66,6 +66,13 @@ class CompanyLead(Base):
     manufacturing_process = Column(Text, nullable=True)      # detected process keywords
     buying_signal = Column(Text, nullable=True)              # HIGH / MEDIUM / LOW (+ detail)
 
+    # Phase 2.5: CRM pipeline
+    lead_status = Column(
+        String(20), nullable=False, default="new", server_default="new", index=True
+    )  # new | qualified | email_generated | approved | contacted | replied | customer | lost
+    last_activity_time = Column(DateTime(timezone=True), nullable=True)
+    next_followup_date = Column(DateTime(timezone=True), nullable=True)
+
     # --- Crawl state -------------------------------------------------------
     crawl_status = Column(
         String(20), nullable=False, default="pending", server_default="pending", index=True

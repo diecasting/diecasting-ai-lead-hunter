@@ -1,9 +1,9 @@
-"""Export API routes (Phase 2.6 / 2.2).
+"""Export API routes (Phase 2.2 / 2.6 / 2.5).
 
 ``GET /export/csv`` builds ``sales_leads.csv`` with the sales-team friendly
 columns (company, country, website, industry, products, email, score, reason,
-priority), saves a copy under ``settings.export_dir`` and streams it back as
-``text/csv``.
+priority) plus Phase 2.5 CRM fields (lead_status, email_status, last_contact,
+next_followup). Saves a copy under ``settings.export_dir`` and streams it back.
 """
 import csv
 import io
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.crud import ai_analysis as ai_crud
+from app.crud import outreach as outreach_crud
 from app.database import get_db
 from app.models.lead import CompanyLead
 
@@ -31,7 +32,18 @@ EXPORT_FIELDS = [
     "score",
     "reason",
     "priority",
+    "lead_status",
+    "email_status",
+    "last_contact",
+    "next_followup",
 ]
+
+
+def _latest_message_status(db: Session, lead_id: int) -> str:
+    msgs = outreach_crud.get_by_lead(db, lead_id)
+    if not msgs:
+        return ""
+    return msgs[0].status  # most recent first
 
 
 def _build_rows(db: Session) -> List[dict]:
@@ -49,6 +61,12 @@ def _build_rows(db: Session) -> List[dict]:
             lead.ai_summary or ""
         )
 
+        # Phase 2.5 CRM fields
+        latest_msg = outreach_crud.get_by_lead(db, lead.id)
+        email_status = latest_msg[0].status if latest_msg else ""
+        last_contact = lead.last_activity_time.isoformat() if lead.last_activity_time else ""
+        next_followup = lead.next_followup_date.isoformat() if lead.next_followup_date else ""
+
         rows.append(
             {
                 "company": lead.name or "",
@@ -60,6 +78,10 @@ def _build_rows(db: Session) -> List[dict]:
                 "score": lead.casting_need_score if lead.casting_need_score is not None else "",
                 "reason": reason,
                 "priority": lead.sales_priority or "",
+                "lead_status": lead.lead_status or "new",
+                "email_status": email_status,
+                "last_contact": last_contact,
+                "next_followup": next_followup,
             }
         )
     return rows

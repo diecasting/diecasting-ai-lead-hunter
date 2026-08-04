@@ -1,0 +1,202 @@
+"""Outreach workflow — lead lifecycle state machine + automation pipeline.
+
+Lead pipeline stages (``CompanyLead.lead_status``):
+    new → qualified → email_generated → approved → contacted → replied → customer
+                                                       ↘ lost
+
+The workflow module provides:
+- ``valid_transitions``: allowed status transitions (state machine).
+- ``can_transition`` / ``transition``: enforce valid moves.
+- ``run_pipeline_for_lead``: a single-lead automation step that, given a HIGH
+  priority lead, generates an email, marks it ``email_generated``, and (when
+  approved) sends it and marks ``contacted``.
+- ``run_daily_pipeline``: the APScheduler daily job — find new HIGH-priority
+  leads, generate emails, create follow-up tasks.
+"""
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
+
+from sqlalchemy.orm import Session
+
+from app.crud import leads as leads_crud
+from app.crud import outreach as outreach_crud
+from app.models.lead import CompanyLead
+from app.outreach.email_generator import generate_email_from_lead
+from app.outreach.followup import schedule_followups
+from app.outreach.sender import send_email
+
+# Allowed transitions between lead_status values.
+VALID_TRANSITIONS: Dict[str, List[str]] = {
+    "new": ["qualified", "lost"],
+    "qualified": ["email_generated", "lost"],
+    "email_generated": ["approved", "lost"],
+    "approved": ["contacted", "lost"],
+    "contacted": ["replied", "lost"],
+    "replied": ["customer", "lost"],
+    "customer": ["lost"],
+    "lost": ["new"],
+}
+
+ALL_STATUSES = [
+    "new",
+    "qualified",
+    "email_generated",
+    "approved",
+    "contacted",
+    "replied",
+    "customer",
+    "lost",
+]
+
+
+def can_transition(current: str, target: str) -> bool:
+    """Return True if moving from ``current`` → ``target`` is allowed."""
+    if current == target:
+        return True
+    return target in VALID_TRANSITIONS.get(current, [])
+
+
+def transition(
+    lead: CompanyLead, target: str, *, db: Optional[Session] = None
+) -> CompanyLead:
+    """Move a lead to ``target`` status, validating the transition.
+
+    Updates ``last_activity_time``. If ``db`` is provided the change is
+    persisted immediately; otherwise the caller must commit.
+    """
+    current = lead.lead_status or "new"
+    if not can_transition(current, target):
+        raise ValueError(
+            f"Invalid lead status transition: {current} -> {target}. "
+            f"Allowed: {VALID_TRANSITIONS.get(current, [])}"
+        )
+    lead.lead_status = target
+    lead.last_activity_time = datetime.now(timezone.utc)
+    if db is not None:
+        db.add(lead)
+        db.commit()
+        db.refresh(lead)
+    return lead
+
+
+def generate_email_for_lead(
+    db: Session, lead: CompanyLead, *, use_llm: bool = True
+) -> "object":
+    """Generate an outreach email for a lead and update its pipeline status.
+
+    Sets lead_status to ``email_generated`` (from ``new``/``qualified``) and
+    creates an ``outreach_messages`` draft row.
+    """
+    if lead.lead_status in ("new", "qualified"):
+        transition(lead, "email_generated", db=db)
+
+    result = generate_email_from_lead(db, lead, use_llm=use_llm)
+    msg = outreach_crud.create(
+        db,
+        lead_id=lead.id,
+        subject=result.get("subject", f"Partnership opportunity with {lead.name}")[:500],
+        body="\n\n".join(
+            p for p in [result.get("opening"), result.get("body"), result.get("call_to_action")] if p
+        ),
+        contact_role=result.get("contact_role"),
+        status="draft",
+    )
+    return msg
+
+
+def approve_and_send(
+    db: Session,
+    lead: CompanyLead,
+    message: "object",
+    recipient_email: str,
+    *,
+    dry_run: bool = True,
+) -> dict:
+    """Approve a draft email, send it, and advance the pipeline.
+
+    Returns the send receipt from ``sender.send_email``.
+    """
+    # Approve
+    if lead.lead_status == "email_generated":
+        transition(lead, "approved", db=db)
+
+    # Send
+    receipt = send_email(db, message, recipient_email, dry_run=dry_run)
+    if receipt.get("success"):
+        transition(lead, "contacted", db=db)
+        # Schedule follow-ups relative to sent time.
+        schedule_followups(db, lead, base_message_id=message.id)
+    return receipt
+
+
+def run_pipeline_for_lead(
+    db: Session, lead: CompanyLead, *, dry_run: bool = True, use_llm: bool = False
+) -> dict:
+    """Full automated pipeline for a single HIGH-priority lead.
+
+    Steps: new/qualified → email_generated (generate) → approved → contacted
+    (send). Does nothing if the lead is already past ``approved``.
+    """
+    report: dict = {"lead_id": lead.id, "steps": []}
+
+    if lead.lead_status in ("new", "qualified"):
+        msg = generate_email_for_lead(db, lead, use_llm=use_llm)
+        report["steps"].append("generated")
+        report["message_id"] = msg.id
+
+        # Auto-approve and send (daily job context).
+        recipient = lead.contact_email
+        if not recipient and lead.contact_emails:
+            emails = [e for e in (lead.contact_emails or []) if e]
+            recipient = emails[0] if emails else None
+        if not recipient:
+            report["steps"].append("no_recipient")
+            return report
+        receipt = approve_and_send(db, lead, msg, recipient, dry_run=dry_run)
+        report["steps"].append("sent" if receipt.get("success") else "send_failed")
+        report["receipt"] = receipt
+    else:
+        report["steps"].append(f"skip:{lead.lead_status}")
+    return report
+
+
+def run_daily_pipeline(
+    db: Session, *, dry_run: bool = True, max_leads: int = 50
+) -> dict:
+    """APScheduler daily job: process new HIGH-priority leads end-to-end.
+
+    Returns a summary report of how many leads were generated/sent.
+    """
+    from app.ai.ranking import rank_with_detail
+
+    # Find new + not-yet-contacted HIGH priority leads.
+    candidates = (
+        db.query(CompanyLead)
+        .filter(
+            CompanyLead.sales_priority == "HIGH",
+            CompanyLead.lead_status.in_(["new", "qualified"]),
+        )
+        .order_by(CompanyLead.id.desc())
+        .limit(max_leads)
+        .all()
+    )
+
+    generated = 0
+    sent = 0
+    for lead in candidates:
+        try:
+            report = run_pipeline_for_lead(db, lead, dry_run=dry_run, use_llm=False)
+            if "generated" in report["steps"]:
+                generated += 1
+            if "sent" in report["steps"]:
+                sent += 1
+        except Exception:  # pragma: no cover - per-lead isolation
+            continue
+
+    return {
+        "candidates": len(candidates),
+        "emails_generated": generated,
+        "emails_sent": sent,
+        "dry_run": dry_run,
+        "run_at": datetime.now(timezone.utc).isoformat(),
+    }

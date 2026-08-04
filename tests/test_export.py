@@ -34,7 +34,7 @@ def test_export_csv(client):
 
 
 def test_export_csv_header_columns():
-    # sanity check on the documented column order
+    # sanity check on the documented column order (Phase 2.5 adds 4 CRM fields)
     assert EXPORT_FIELDS == [
         "company",
         "country",
@@ -45,4 +45,8 @@ def test_export_csv_header_columns():
         "score",
         "reason",
         "priority",
+        "lead_status",
+        "email_status",
+        "last_contact",
+        "next_followup",
     ]

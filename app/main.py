@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import crm as crm_router
 from app.api import crawl as crawl_router
 from app.api import export as export_router
 from app.api import outreach as outreach_router
@@ -40,6 +41,7 @@ app.include_router(crawl_router.router)
 app.include_router(search_router.router)
 app.include_router(export_router.router)
 app.include_router(outreach_router.router)
+app.include_router(crm_router.router)
 
 
 @app.get("/health", tags=["health"])

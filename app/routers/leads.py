@@ -1,7 +1,9 @@
 """Lead API routes: CRUD plus crawl/ingest, AI-analysis, and search endpoints."""
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.ai.analyzer import run_analysis
@@ -291,3 +293,45 @@ def generate_email(
         status="draft",
     )
     return msg
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.5: CRM pipeline
+# ---------------------------------------------------------------------------
+class LeadStatusUpdate(BaseModel):
+    """Payload for updating a lead's sales pipeline status."""
+
+    lead_status: str
+    next_followup_date: Optional[datetime] = None
+
+
+@router.patch("/{lead_id}/status", response_model=CompanyLeadRead)
+def update_lead_status(
+    lead_id: int,
+    payload: LeadStatusUpdate,
+    db: Session = Depends(get_db),
+):
+    """Update a lead's sales pipeline status (e.g. new → qualified → contacted).
+
+    Validates the transition against the CRM state machine
+    (``app.outreach.workflow.VALID_TRANSITIONS``).
+    """
+    from app.outreach.workflow import transition
+
+    lead = crud.get(db, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    try:
+        transition(lead, payload.lead_status, db=db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if payload.next_followup_date is not None:
+        lead.next_followup_date = payload.next_followup_date
+        db.add(lead)
+        db.commit()
+        db.refresh(lead)
+
+    db.refresh(lead)
+    return lead

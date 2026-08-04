@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     scheduler_minute: int = 0
     scheduler_max_results: int = 20
 
+    # SMTP (Phase 2.5 outreach sending)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+
     @property
     def sqlalchemy_database_uri(self) -> str:
         if self.database_url:

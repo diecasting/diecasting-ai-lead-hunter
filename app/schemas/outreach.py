@@ -16,6 +16,11 @@ class OutreachMessageRead(BaseModel):
     body: str
     contact_role: Optional[str] = None
     status: str = "draft"
+    sent_time: Optional[datetime] = None
+    sender: Optional[str] = None
+    recipient: Optional[str] = None
+    is_followup: bool = False
+    followup_seq: int = 0
     created_at: datetime
 
 
