@@ -56,7 +56,15 @@ class CompanyLead(Base):
 
     # Phase 2: dedicated casting-need scoring
     casting_need_score = Column(Integer, nullable=True, index=True)  # 0-100
+    cnc_need_score = Column(Integer, nullable=True, index=True)      # 0-100
+    tooling_need_score = Column(Integer, nullable=True, index=True)  # 0-100
     sales_priority = Column(String(10), nullable=True, index=True)   # HIGH/MEDIUM/LOW
+
+    # Phase 2.3: industrial lead intelligence
+    business_type = Column(String(80), nullable=True)        # Manufacturer / Trader / Supplier
+    materials = Column(Text, nullable=True)                  # detected material keywords
+    manufacturing_process = Column(Text, nullable=True)      # detected process keywords
+    buying_signal = Column(Text, nullable=True)              # HIGH / MEDIUM / LOW (+ detail)
 
     # --- Crawl state -------------------------------------------------------
     crawl_status = Column(

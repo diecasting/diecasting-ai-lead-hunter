@@ -50,7 +50,13 @@ class CompanyLeadRead(CompanyLeadBase):
     pages_crawled: int = 0
     crawl_time: Optional[datetime] = None
     casting_need_score: Optional[int] = None
+    cnc_need_score: Optional[int] = None
+    tooling_need_score: Optional[int] = None
     sales_priority: Optional[str] = None
+    business_type: Optional[str] = None
+    materials: Optional[str] = None
+    manufacturing_process: Optional[str] = None
+    buying_signal: Optional[str] = None
     ai_score: Optional[float] = None
     ai_relevant: Optional[bool] = None
     ai_summary: Optional[str] = None

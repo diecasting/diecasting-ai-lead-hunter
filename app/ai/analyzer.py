@@ -1,12 +1,20 @@
-"""AI analysis module (Phase 2.3 upgrade).
+"""AI analysis module (Phase 2.3 upgrade — website content intelligence).
 
-Combines a deterministic, rule-based ``casting_need_score`` (see
-``app.ai.scoring``) with optional OpenAI enrichment for the natural-language
-summary. The analysis is written to the ``ai_analysis`` history table and the
-latest values are denormalised onto ``CompanyLead`` for fast querying / export.
+Combines a deterministic, rule-based scoring engine (``app.ai.scoring`` +
+``app.ai.ranking``) with optional OpenAI enrichment for the natural-language
+summary. The analysis produces the full Phase 2.3 intelligence payload and is
+written to the ``ai_analysis`` history table; the latest values are
+denormalised onto ``CompanyLead`` for fast querying / export.
 
-No OpenAI API key is required for the score / priority / products — only the
-English summary uses the LLM when a key is configured.
+Inputs (section 1)
+------------------
+The crawler / API may supply *structured* website content:
+
+    {"homepage": ..., "about": ..., "products": ..., "industries": ..., "pdf_text": ...}
+
+All sections are concatenated before scoring so signals spread across pages are
+still captured. No OpenAI API key is required for the scores / priority /
+materials / processes — only the English summary uses the LLM when configured.
 """
 import json
 from datetime import datetime, timezone
@@ -14,7 +22,8 @@ from typing import Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from app.ai.scoring import build_analysis, casting_need_score, sales_priority
+from app.ai.ranking import rank_with_detail
+from app.ai.scoring import build_analysis
 from app.config import settings
 from app.crud import ai_analysis as ai_analysis_crud
 from app.models.lead import CompanyLead
@@ -22,7 +31,7 @@ from app.models.lead import CompanyLead
 SYSTEM_PROMPT = """You are a B2B sales-intelligence analyst for the metal \
 die-casting industry. Given structured information about a company, write:
 - summary: one short paragraph (English) explaining why this company is or \
-isn't a good die-casting lead
+isn't a good die-casting / CNC / tooling lead
 - signals: array of short strings describing concrete fit / buying-intent signals
 
 Return a JSON object with EXACTLY these keys: {"summary": str, "signals": list[str]}.
@@ -37,29 +46,34 @@ def _client():
     return OpenAI(api_key=settings.openai_api_key)
 
 
-def analyze_company_full(
-    lead_dict: Dict,
-    crawled_text: str = "",
+# Keys of the structured content dict, in the order they should be joined.
+_CONTENT_KEYS = ("homepage", "about", "products", "industries", "pdf_text")
+
+
+def _join_content(content: Dict[str, str]) -> str:
+    parts = [str(content.get(k) or "") for k in _CONTENT_KEYS]
+    return " ".join(p for p in parts if p).strip()
+
+
+def analyze_content(
+    content: Dict[str, str],
+    *,
+    company: str = "",
+    country: str = "",
+    industry: str = "",
     use_llm: bool = True,
 ) -> Dict:
-    """Build the full Phase 2.3 analysis payload for a lead.
+    """Build the full Phase 2.3 intelligence payload from structured content.
 
-    ``lead_dict`` is a mapping with keys: name, country, industry, description.
-    The deterministic score/priority/products come from ``scoring.build_analysis``;
-    the LLM (when configured) only enriches the English summary.
+    ``content`` is a mapping with the section keys above. The deterministic
+    scores / priority / materials / processes come from ``scoring.build_analysis``;
+    the LLM (when configured) only enriches the English ``ai_summary``.
     """
-    text = " ".join(
-        [
-            str(lead_dict.get("name") or ""),
-            str(lead_dict.get("industry") or ""),
-            str(lead_dict.get("description") or ""),
-            str(crawled_text or ""),
-        ]
-    )
+    text = _join_content(content)
     analysis = build_analysis(
-        company=str(lead_dict.get("name") or ""),
-        country=str(lead_dict.get("country") or ""),
-        industry=str(lead_dict.get("industry") or ""),
+        company=company,
+        country=country,
+        industry=industry,
         text=text,
     )
 
@@ -68,11 +82,10 @@ def analyze_company_full(
             client = _client()
             user_text = json.dumps(
                 {
-                    "name": lead_dict.get("name"),
-                    "industry": lead_dict.get("industry"),
-                    "country": lead_dict.get("country"),
-                    "description": lead_dict.get("description"),
-                    "crawled_text_sample": (crawled_text or "")[:2000],
+                    "name": company,
+                    "industry": industry,
+                    "country": country,
+                    "content_sample": text[:2000],
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -90,11 +103,39 @@ def analyze_company_full(
             analysis["ai_summary"] = str(data.get("summary", ""))
             analysis["ai_signals"] = list(data.get("signals", []))
         except Exception:
-            # LLM is best-effort; fall back to rule-based summary.
-            analysis.setdefault("ai_summary", analysis.get("buying_signal", ""))
+            # LLM is best-effort; fall back to the rule-based reason.
+            analysis.setdefault("ai_summary", analysis.get("reason", ""))
             analysis.setdefault("ai_signals", [])
+    else:
+        analysis.setdefault("ai_summary", analysis.get("reason", ""))
+        analysis.setdefault("ai_signals", [])
 
     return analysis
+
+
+def analyze_company_full(
+    lead_dict: Dict,
+    crawled_text: str = "",
+    use_llm: bool = True,
+) -> Dict:
+    """Backward-compatible wrapper: build content from a flat lead dict.
+
+    ``lead_dict`` keys: name, country, industry, description.
+    """
+    content = {
+        "homepage": f"{lead_dict.get('name') or ''} {lead_dict.get('description') or ''}".strip(),
+        "about": "",
+        "products": crawled_text or "",
+        "industries": lead_dict.get("industry") or "",
+        "pdf_text": "",
+    }
+    return analyze_content(
+        content,
+        company=str(lead_dict.get("name") or ""),
+        country=str(lead_dict.get("country") or ""),
+        industry=str(lead_dict.get("industry") or ""),
+        use_llm=use_llm,
+    )
 
 
 def run_analysis(
@@ -106,22 +147,33 @@ def run_analysis(
 
     Returns the created ``AIAnalysis`` instance.
     """
-    lead_dict = {
-        "name": lead.name,
-        "country": lead.country,
-        "industry": lead.industry,
-        "description": lead.description,
+    content = {
+        "homepage": f"{lead.name or ''} {lead.description or ''}".strip(),
+        "about": "",
+        "products": crawled_text or lead.website_content or "",
+        "industries": lead.industry or "",
+        "pdf_text": "",
     }
-    # If the lead has no description yet, fall back to its name/industry only.
-    analysis = analyze_company_full(lead_dict, crawled_text=crawled_text)
+    analysis = analyze_content(
+        content,
+        company=lead.name or "",
+        country=lead.country or "",
+        industry=lead.industry or "",
+    )
 
-    score = analysis["casting_need_score"]
-    priority = analysis["sales_priority"]
+    casting = analysis["casting_need_score"]
+    cnc = analysis["cnc_need_score"]
+    tooling = analysis["tooling_need_score"]
+    rank = rank_with_detail(
+        casting_need_score=casting, cnc_need_score=cnc, tooling_need_score=tooling
+    )
+    priority = rank["priority"]
+    best = rank["primary_score"]
 
     row = ai_analysis_crud.create(
         db,
         lead_id=lead.id,
-        casting_need_score=score,
+        casting_need_score=casting,
         sales_priority=priority,
         industry=analysis.get("industry"),
         products=analysis.get("products"),
@@ -132,12 +184,32 @@ def run_analysis(
     )
 
     # Denormalise latest values onto the lead for fast reads / export.
-    lead.casting_need_score = score
+    lead.casting_need_score = casting
+    lead.cnc_need_score = cnc
+    lead.tooling_need_score = tooling
     lead.sales_priority = priority
-    lead.ai_score = float(score)
-    lead.ai_relevant = score >= 50
-    lead.ai_summary = analysis.get("ai_summary") or analysis.get("buying_signal")
-    lead.ai_signals = json.dumps(analysis.get("ai_signals", []), ensure_ascii=False)
+    lead.business_type = analysis.get("business_type")
+    lead.materials = analysis.get("materials") or None
+    lead.manufacturing_process = analysis.get("manufacturing_process") or None
+    lead.buying_signal = analysis.get("buying_signal")
+    lead.ai_score = float(best)
+    lead.ai_relevant = best >= 50
+    lead.ai_summary = analysis.get("ai_summary") or analysis.get("reason")
+    lead.ai_signals = json.dumps(
+        {
+            "materials": (analysis.get("materials") or "").split(", ")
+            if analysis.get("materials")
+            else [],
+            "processes": (analysis.get("manufacturing_process") or "").split(", ")
+            if analysis.get("manufacturing_process")
+            else [],
+            "industries": (analysis.get("target_market") or "").split(", ")
+            if analysis.get("target_market")
+            else [],
+            "buying_signal": analysis.get("buying_signal"),
+        },
+        ensure_ascii=False,
+    )
     lead.ai_analyzed_at = datetime.now(timezone.utc)
 
     # Enrich contact e-mail if the analysis surfaced a concrete mailbox.

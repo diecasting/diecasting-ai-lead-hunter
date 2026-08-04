@@ -119,3 +119,119 @@ def crawl_pending(
     except Exception as exc:  # pragma: no cover - depends on browser/network
         raise HTTPException(status_code=502, detail=f"Crawl failed: {exc}")
     return report
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.3: Industrial AI Lead Intelligence
+# ---------------------------------------------------------------------------
+@router.get("/high-priority", response_model=List[CompanyLeadRead])
+def get_high_priority_leads(
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Return the most sales-worthy leads, sorted by score descending.
+
+    A lead qualifies as *high-priority* when ``sales_priority`` is ``HIGH``
+    (best need-score ≥ 80). If fewer than ``limit`` HIGH leads exist, the
+    remaining slots are filled with MEDIUM leads so the sales team always
+    has a actionable shortlist.
+    """
+    high = (
+        db.query(CompanyLead)
+        .filter(CompanyLead.sales_priority == "HIGH")
+        .order_by(CompanyLead.ai_score.desc().nullslast(), CompanyLead.id.desc())
+        .limit(limit)
+        .all()
+    )
+    remaining = limit - len(high)
+    if remaining > 0:
+        high_ids = {l.id for l in high}
+        medium = (
+            db.query(CompanyLead)
+            .filter(
+                CompanyLead.sales_priority == "MEDIUM",
+                CompanyLead.id.notin_(high_ids) if high_ids else True,
+            )
+            .order_by(CompanyLead.ai_score.desc().nullslast(), CompanyLead.id.desc())
+            .limit(remaining)
+            .all()
+        )
+        high.extend(medium)
+    return high
+
+
+@router.post("/{lead_id}/intelligence", response_model=CompanyLeadRead)
+def run_intelligence(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    crawl: bool = Query(True, description="Crawl website content before analysis"),
+    extract_pdfs: bool = Query(
+        True, description="Discover and extract PDF documents (catalogs/brochures)"
+    ),
+):
+    """Full Phase 2.3 intelligence pipeline for a single lead.
+
+    Steps:
+    1. (optional) Crawl the company website → structured page text.
+    2. (optional) Discover & extract PDF documents → capability signals.
+    3. Run the AI analysis (rule-based scoring + optional LLM summary).
+    4. Compute the final ``sales_priority`` via the ranking engine.
+
+    The lead's intelligence fields (scores, materials, processes,
+    buying_signal, business_type, ai_summary, …) are updated in place.
+    """
+    obj = crud.get(db, lead_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    pdf_text = ""
+
+    # Step 1: crawl website content (if enabled and website exists).
+    if crawl and obj.website:
+        try:
+            from app.crawler.website_crawler import WebsiteCrawler
+
+            crawler = WebsiteCrawler()
+            result = crawler.crawl(obj.website)
+            # result is a CrawlResult dataclass with .text_content and .pages_found
+            website_text = getattr(result, "text_content", "") or ""
+            if website_text:
+                obj.website_content = website_text[:50000]
+                obj.pages_crawled = getattr(result, "pages_found", 0) or 0
+                from datetime import datetime, timezone
+                obj.crawl_status = "completed"
+                obj.crawl_time = datetime.now(timezone.utc)
+                db.add(obj)
+                db.commit()
+        except Exception as exc:  # pragma: no cover - depends on browser/network
+            # Crawl failure should not block the analysis pipeline.
+            obj.crawl_status = "failed"
+            db.add(obj)
+            db.commit()
+
+    # Step 2: extract PDF documents (if enabled).
+    if extract_pdfs and obj.website:
+        try:
+            from app.crawler.pdf_extractor import PDFExtractor
+
+            extractor = PDFExtractor()
+            home_html = obj.website_content or ""
+            pdf_result = extractor.extract_for_lead(db, obj, home_html=home_html)
+            # Merge PDF text into the analysis input.
+            from app.crud import company_documents as doc_crud
+            docs = doc_crud.get_by_lead(db, obj.id)
+            pdf_text = " ".join(d.content or "" for d in docs)
+        except Exception:  # pragma: no cover - depends on network/PDF libs
+            pass
+
+    # Step 3 + 4: AI analysis + ranking.
+    try:
+        crawled_text = " ".join(
+            t for t in [obj.website_content or "", pdf_text] if t
+        )
+        run_analysis(db, obj, crawled_text=crawled_text)
+    except Exception as exc:  # pragma: no cover - depends on OpenAI
+        raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}")
+
+    db.refresh(obj)
+    return obj

@@ -5,6 +5,7 @@ Importing this module registers every ORM model on the shared declarative
 reads from.
 """
 from app.models.ai_analysis import AIAnalysis
+from app.models.company_document import CompanyDocument
 from app.models.crawl_task import CrawlTask
 from app.models.lead import CompanyLead
 from app.models.search_result import SearchResult
@@ -14,4 +15,5 @@ __all__ = [
     "SearchResult",
     "CrawlTask",
     "AIAnalysis",
+    "CompanyDocument",
 ]

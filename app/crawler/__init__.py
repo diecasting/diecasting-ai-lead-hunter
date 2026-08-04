@@ -1,4 +1,4 @@
-"""Web crawler package (Playwright-based website crawler, Phase 2.2)."""
+"""Web crawler package (Playwright-based website crawler, Phase 2.2 / 2.3)."""
 from app.crawler.email_extractor import extract_and_filter, extract_emails, filter_emails
 from app.crawler.page_discovery import (
     classify_path,
@@ -6,6 +6,12 @@ from app.crawler.page_discovery import (
     discover_pages,
     extract_links,
     extract_text,
+)
+from app.crawler.pdf_extractor import (
+    PDFExtractor,
+    analyze_capabilities,
+    discover_pdf_urls,
+    extract_pdf_documents,
 )
 from app.crawler.website_crawler import (
     CrawlResult,
@@ -23,6 +29,11 @@ __all__ = [
     "is_path_allowed",
     "page_discovery",
     "email_extractor",
+    "pdf_extractor",
+    "PDFExtractor",
+    "analyze_capabilities",
+    "discover_pdf_urls",
+    "extract_pdf_documents",
     "extract_emails",
     "filter_emails",
     "extract_and_filter",

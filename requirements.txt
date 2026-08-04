@@ -17,6 +17,9 @@ openai==1.47.0
 # Crawler
 playwright==1.47.0
 
+# PDF text extraction (Phase 2.3)
+pdfminer.six==20240706
+
 # Database migrations + scheduler
 alembic==1.13.2
 apscheduler==3.10.4
