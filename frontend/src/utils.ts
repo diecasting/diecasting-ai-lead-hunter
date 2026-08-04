@@ -1,8 +1,8 @@
 // Small presentation helpers shared across pages.
-import type { CompanyLead, LeadScoreBreakdown, Priority } from "./types";
+import type { CompanyLead, LeadScoreBreakdown } from "./types";
 
-/** Color tokens per priority label. */
-export function priorityColor(priority: Priority): string {
+/** Color tokens per priority label. Accepts nullable API strings. */
+export function priorityColor(priority: string | null | undefined): string {
   switch (priority) {
     case "HIGH":
       return "#dc2626"; // red = hot (Chinese market convention: up=red)
@@ -15,8 +15,9 @@ export function priorityColor(priority: Priority): string {
   }
 }
 
-export function priorityBadge(priority: Priority): string {
-  return priority ?? "—";
+export function priorityBadge(priority: string | null | undefined): string {
+  if (!priority) return "—";
+  return priority;
 }
 
 /** A colored score bar for 0–100 values. */
