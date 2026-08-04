@@ -8,6 +8,7 @@ from app.models.ai_analysis import AIAnalysis
 from app.models.company_document import CompanyDocument
 from app.models.crawl_task import CrawlTask
 from app.models.lead import CompanyLead
+from app.models.outreach_message import OutreachMessage
 from app.models.search_result import SearchResult
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "CrawlTask",
     "AIAnalysis",
     "CompanyDocument",
+    "OutreachMessage",
 ]

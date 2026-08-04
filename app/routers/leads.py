@@ -10,7 +10,9 @@ from app.crawler.runner import process_pending
 from app.crud import leads as crud
 from app.database import get_db
 from app.models.lead import CompanyLead
+from app.outreach.email_generator import generate_email_from_lead
 from app.schemas.lead import CompanyLeadCreate, CompanyLeadRead, CompanyLeadUpdate
+from app.schemas.outreach import GenerateEmailRequest, OutreachMessageRead
 from app.search.service import SearchService
 
 router = APIRouter(prefix="/leads", tags=["leads"])
@@ -235,3 +237,57 @@ def run_intelligence(
 
     db.refresh(obj)
     return obj
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.4: AI Sales Outreach Engine
+# ---------------------------------------------------------------------------
+@router.post("/{lead_id}/generate-email", response_model=OutreachMessageRead, status_code=201)
+def generate_email(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    overrides: GenerateEmailRequest = None,  # type: ignore[assignment]
+):
+    """Generate a personalised B2B sales outreach email for this lead.
+
+    Uses the lead's AI intelligence fields (industry, materials, processes,
+    buying signal) plus an industry-specific template to produce a technically
+    grounded email. When OpenAI is configured the text is enriched by the LLM;
+    otherwise a deterministic template render is used.
+
+    The generated email is saved as an ``outreach_messages`` row with status
+    ``draft`` so the sales team can review before sending.
+    """
+    from app.crud import outreach as outreach_crud
+
+    lead = crud.get(db, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    try:
+        result = generate_email_from_lead(db, lead, use_llm=True)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Email generation failed: {exc}")
+
+    subject = result.get("subject", f"Partnership opportunity with {lead.name or 'your company'}")
+    body_parts = []
+    opening = result.get("opening", "")
+    main_body = result.get("body", "")
+    cta = result.get("call_to_action", "")
+    if opening:
+        body_parts.append(opening)
+    if main_body:
+        body_parts.append(main_body)
+    if cta:
+        body_parts.append("\n" + cta)
+    full_body = "\n\n".join(body_parts)
+
+    msg = outreach_crud.create(
+        db,
+        lead_id=lead.id,
+        subject=subject[:500],
+        body=full_body,
+        contact_role=result.get("contact_role"),
+        status="draft",
+    )
+    return msg
