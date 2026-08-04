@@ -31,8 +31,12 @@ INVALID = "invalid"
 RISKY = "risky"
 UNKNOWN = "unknown"
 
-# Statuses the outreach quality gate will block on.
-BLOCKED_STATUSES = {INVALID, RISKY}
+# Statuses the outreach quality gate will *hard*-block on.
+# As of Phase 4 Stage 1, RISKY is a SOFT signal (it lowers recipient confidence
+# but does not by itself prevent delivery) — only INVALID is a hard block. The
+# stricter "block risky" posture can be re-enabled via EmailQualityGate(
+# block_risky=True). do_not_contact is enforced separately by the gate.
+BLOCKED_STATUSES = {INVALID}
 
 # Default per-verdict deliverability hint used when a verifier does not set it
 # explicitly. ``yes`` / ``no`` / ``unknown`` mirror the DB ``is_deliverable``

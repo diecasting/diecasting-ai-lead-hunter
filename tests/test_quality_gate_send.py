@@ -64,7 +64,8 @@ class TestSendGateBlocks:
         assert receipt["blocked"] is True
         assert len(transport.sent) == 0  # nothing delivered
 
-    def test_disposable_email_blocked(self, client, db, monkeypatch):
+    def test_disposable_email_allowed_stage1(self, client, db, monkeypatch):
+        """Stage 1: risky (disposable) is a soft signal, not a hard block."""
         from app import config as config_mod
 
         monkeypatch.setattr(config_mod.settings, "smtp_host", "smtp.example.com")
@@ -73,7 +74,26 @@ class TestSendGateBlocks:
 
         lead_id = _make_lead_with_email(client, "spam@mailinator.com")
         message = _make_message(client, db, lead_id)
-        gate = EmailQualityGate()
+        gate = EmailQualityGate()  # block_risky defaults to False
+
+        transport = _FakeSmtpTransport()
+        receipt = send_email(
+            db, message, "spam@mailinator.com", dry_run=False, transport=transport, gate=gate
+        )
+        assert receipt.get("blocked") is not True  # not blocked
+        assert receipt["success"] is True
+        assert len(transport.sent) == 1
+
+    def test_disposable_blocked_when_block_risky_set(self, client, db, monkeypatch):
+        from app import config as config_mod
+
+        monkeypatch.setattr(config_mod.settings, "smtp_host", "smtp.example.com")
+        monkeypatch.setattr(config_mod.settings, "smtp_user", "u@e.com")
+        monkeypatch.setattr(config_mod.settings, "smtp_password", "pw")
+
+        lead_id = _make_lead_with_email(client, "spam@mailinator.com")
+        message = _make_message(client, db, lead_id)
+        gate = EmailQualityGate(block_risky=True)
 
         transport = _FakeSmtpTransport()
         receipt = send_email(

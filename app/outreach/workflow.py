@@ -21,13 +21,16 @@ from sqlalchemy.orm import Session
 from app.crud import leads as leads_crud
 from app.crud import outreach as outreach_crud
 from app.models.lead import CompanyLead
+from app.outreach.contact_selector import select_best_contact
 from app.outreach.email_generator import generate_email_from_lead
+from app.outreach.email_verifier import VerificationResult
 from app.outreach.followup import schedule_followups
+from app.outreach.quality_gate import EmailQualityGate
 from app.outreach.sender import send_email
 
 # Allowed transitions between lead_status values.
 VALID_TRANSITIONS: Dict[str, List[str]] = {
-    "new": ["qualified", "lost"],
+    "new": ["qualified", "email_generated", "lost"],
     "qualified": ["email_generated", "lost"],
     "email_generated": ["approved", "lost"],
     "approved": ["contacted", "lost"],
@@ -79,6 +82,36 @@ def transition(
     return lead
 
 
+def select_outreach_contact(
+    db: Session,
+    lead: CompanyLead,
+    *,
+    gate: Optional["EmailQualityGate"] = None,
+) -> Optional["object"]:
+    """Pick the best recipient contact for ``lead`` (Phase 4 Stage 1).
+
+    Loads the lead's extracted contacts, runs them through the contact selector
+    (role-priority + verification confidence), and returns the top-ranked
+    ``Contact`` (or ``None`` if the lead has no usable contact / no e-mail).
+
+    ``gate`` (an ``EmailQualityVerifier``) is used to score each contact's
+    e-mail confidence; when omitted, selection falls back to role + primary
+    heuristics only.
+    """
+    from app.crud import contacts as contacts_crud
+
+    contacts = contacts_crud.list_for_lead(db, lead.id)
+    if not contacts:
+        return None
+
+    verify = None
+    if gate is not None:
+        def verify(email: str) -> VerificationResult:
+            return gate.check(email)
+
+    return select_best_contact(contacts, verify=verify)
+
+
 def generate_email_for_lead(
     db: Session, lead: CompanyLead, *, use_llm: bool = True
 ) -> "object":
@@ -112,6 +145,7 @@ def approve_and_send(
     *,
     dry_run: bool = True,
     gate=None,
+    contact=None,
     force: bool = False,
 ) -> dict:
     """Approve a draft email, send it, and advance the pipeline.
@@ -119,15 +153,16 @@ def approve_and_send(
     The optional ``gate`` (an ``EmailQualityGate`` / ``BaseEmailVerifier``) is
     consulted before delivery; a blocked recipient returns a refused receipt and
     the pipeline is NOT advanced to ``contacted``. Pass ``force=True`` to bypass.
+    ``contact`` is the selected ``Contact`` (if any) used for the gate's
+    ``do_not_contact`` check.
 
     Returns the send receipt from ``sender.send_email``.
     """
     from app.crud import contacts as contacts_crud
 
-    # Resolve a related Contact (for the gate's do_not_contact check) if the
-    # message is tied to one via tracking_token / recipient.
-    contact = None
-    if getattr(message, "tracking_token", None):
+    # Resolve a related Contact (for the gate's do_not_contact check) when not
+    # explicitly supplied: fall back to the message's tracking_token / recipient.
+    if contact is None and getattr(message, "tracking_token", None):
         contact = contacts_crud.get_by_email(db, recipient_email)
 
     # Approve
@@ -147,12 +182,18 @@ def approve_and_send(
 
 
 def run_pipeline_for_lead(
-    db: Session, lead: CompanyLead, *, dry_run: bool = True, use_llm: bool = False
+    db: Session, lead: CompanyLead, *, dry_run: bool = True, use_llm: bool = False,
+    gate: Optional["EmailQualityGate"] = None,
 ) -> dict:
     """Full automated pipeline for a single HIGH-priority lead.
 
     Steps: new/qualified → email_generated (generate) → approved → contacted
     (send). Does nothing if the lead is already past ``approved``.
+
+    Recipient selection (Phase 4 Stage 1): when the lead has extracted
+    ``contacts``, the best one is chosen automatically via
+    :func:`select_outreach_contact` (role-priority + verification confidence);
+    otherwise the legacy ``contact_email`` / ``contact_emails`` fallback is used.
     """
     report: dict = {"lead_id": lead.id, "steps": []}
 
@@ -161,15 +202,25 @@ def run_pipeline_for_lead(
         report["steps"].append("generated")
         report["message_id"] = msg.id
 
-        # Auto-approve and send (daily job context).
-        recipient = lead.contact_email
-        if not recipient and lead.contact_emails:
-            emails = [e for e in (lead.contact_emails or []) if e]
-            recipient = emails[0] if emails else None
+        # Auto-approve and send (daily job context). Prefer the best extracted
+        # contact; fall back to the legacy company-level e-mail.
+        recipient = None
+        selected = select_outreach_contact(db, lead, gate=gate)
+        if selected is not None and getattr(selected, "email", None):
+            recipient = selected.email
+            report["selected_contact_id"] = selected.id
+        else:
+            recipient = lead.contact_email
+            if not recipient and lead.contact_emails:
+                emails = [e for e in (lead.contact_emails or []) if e]
+                recipient = emails[0] if emails else None
         if not recipient:
             report["steps"].append("no_recipient")
             return report
-        receipt = approve_and_send(db, lead, msg, recipient, dry_run=dry_run)
+        receipt = approve_and_send(
+            db, lead, msg, recipient, dry_run=dry_run, gate=gate,
+            contact=selected,
+        )
         report["steps"].append("sent" if receipt.get("success") else "send_failed")
         report["receipt"] = receipt
     else:
@@ -200,9 +251,12 @@ def run_daily_pipeline(
 
     generated = 0
     sent = 0
+    gate = EmailQualityGate()
     for lead in candidates:
         try:
-            report = run_pipeline_for_lead(db, lead, dry_run=dry_run, use_llm=False)
+            report = run_pipeline_for_lead(
+                db, lead, dry_run=dry_run, use_llm=False, gate=gate
+            )
             if "generated" in report["steps"]:
                 generated += 1
             if "sent" in report["steps"]:

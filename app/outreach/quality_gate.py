@@ -1,12 +1,15 @@
-"""Outreach Quality Gate (Phase 4 Stage 0).
+"""Outreach Quality Gate (Phase 4 Stage 0 → Stage 1).
 
 A composite verifier that runs an address through the configured verifier chain
 and aggregates the results into a single verdict, then additionally blocks sends
 when the related ``CompanyLead`` or ``Contact`` is flagged ``do_not_contact``.
 
-The gate is what the sender consults *before* any real SMTP delivery: an address
-that is ``INVALID`` / ``RISKY`` (or tied to a ``do_not_contact`` record) is
-refused, so the pipeline never wastes a send on a dead / harmful target.
+**Stage 1 policy change — risky != block.** Only hard ``INVALID`` verdicts (and
+``do_not_contact``) stop a send. A ``RISKY`` verdict (role account, disposable,
+no MX, API "accept_all", etc.) is now a *soft* signal: it lowers the recipient's
+confidence score but does **not** by itself prevent delivery. The previous
+"block risky" behaviour can be re-enabled with ``block_risky=True`` for
+deployments that prefer the stricter posture.
 
 The gate is injectable (``verifiers=``) so tests can run it fully offline, and
 ``check`` returns a :class:`VerificationResult` carrying the per-verifier
@@ -35,9 +38,14 @@ class EmailQualityGate(BaseEmailVerifier):
     name = "quality_gate"
 
     def __init__(
-        self, verifiers: Optional[List[BaseEmailVerifier]] = None
+        self,
+        verifiers: Optional[List[BaseEmailVerifier]] = None,
+        *,
+        block_risky: bool = False,
     ) -> None:
         self._verifiers: List[BaseEmailVerifier] = verifiers or default_verifier_chain()
+        # Stage 1: RISKY no longer blocks by default.
+        self.block_risky = block_risky
 
     # Order of precedence for the composite verdict. INVALID > RISKY > UNKNOWN >
     # VALID — the most conservative (worst) result wins, because a single hard
@@ -100,13 +108,13 @@ class EmailQualityGate(BaseEmailVerifier):
         """Decide whether an outreach send to ``email`` is permitted.
 
         Blocks when:
-          * the composite verdict is INVALID or RISKY (unless ``force``), or
+          * the composite verdict is INVALID (hard fail), or
+          * ``block_risky`` is enabled and the verdict is RISKY, or
           * the related lead / contact has ``do_not_contact`` set.
 
-        ``db`` is accepted for signature compatibility (e.g. to record the
-        verification) but the decision itself is pure / offline.
-        Returns a :class:`VerificationResult`; callers should treat
-        ``result.is_blocked()`` (or ``not result.ok``) as "do not send".
+        A plain RISKY verdict is otherwise allowed (Stage 1: risky != block) but
+        the caller can consult the returned ``score`` / ``status`` to down-rank
+        the recipient. ``force=True`` bypasses everything.
         """
         if force:
             return VerificationResult(
@@ -126,4 +134,14 @@ class EmailQualityGate(BaseEmailVerifier):
             )
 
         result = self.check(email)
+        # Stage 1: RISKY is a soft signal. By default it is NOT blocked; the
+        # caller can still see the RISKY status and down-rank the recipient.
+        # When ``block_risky`` is enabled we hard-block it (reported as INVALID
+        # so ``is_blocked()`` stays the single source of truth).
+        if self.block_risky and result.status == RISKY:
+            return VerificationResult(
+                status=INVALID, verifier=self.name,
+                reason=f"risky blocked by policy: {result.reason}",
+                score=result.score, detail=result.detail,
+            )
         return result

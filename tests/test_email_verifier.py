@@ -47,8 +47,9 @@ class TestBaseAndResult:
         assert r3.is_deliverable == "unknown"
 
     def test_result_is_blocked(self):
+        # Stage 1: only INVALID is a hard block; RISKY is a soft signal.
         assert VerificationResult(status=INVALID).is_blocked() is True
-        assert VerificationResult(status=RISKY).is_blocked() is True
+        assert VerificationResult(status=RISKY).is_blocked() is False
         assert VerificationResult(status=VALID).is_blocked() is False
         assert VerificationResult(status=UNKNOWN).is_blocked() is False
 
@@ -167,10 +168,17 @@ class TestQualityGate:
         r = g.check("not-an-email")
         assert r.status == INVALID
 
-    def test_disposable_is_risky_blocked(self):
+    def test_disposable_is_risky_soft_signal(self):
+        """Stage 1: disposable -> RISKY verdict but NOT a hard block by default."""
         g = EmailQualityGate()
         r = g.check("spam@mailinator.com")
         assert r.status == RISKY
+        assert r.is_blocked() is False
+
+    def test_disposable_risky_hard_blocked_when_opt_in(self):
+        g = EmailQualityGate(block_risky=True)
+        r = g.allow_send("spam@mailinator.com")
+        assert r.status == INVALID
         assert r.is_blocked() is True
 
     def test_do_not_contact_blocks(self):
