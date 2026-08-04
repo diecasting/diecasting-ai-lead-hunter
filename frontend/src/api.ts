@@ -1,0 +1,112 @@
+// Thin fetch-based API client. All paths are relative to `/api` which is
+// proxied to the FastAPI backend by Vite (see vite.config.ts). Set
+// VITE_API_BASE to override (e.g. a deployed backend URL) at build time.
+import type {
+  CompanyLead,
+  OutreachMessage,
+  RankingResponse,
+} from "./types";
+
+const BASE = import.meta.env.VITE_API_BASE ?? "/api";
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  query?: Record<string, string | number | boolean | undefined>,
+): Promise<T> {
+  const url = new URL(`${BASE}${path}`, window.location.origin);
+  if (query) {
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== "") {
+        url.searchParams.set(k, String(v));
+      }
+    }
+  }
+  const res = await fetch(url.toString(), {
+    method,
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const err = await res.json();
+      detail = err.detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`${method} ${path} failed (${res.status}): ${detail}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export const api = {
+  // ---- Leads ------------------------------------------------------------
+  listLeads: (params?: {
+    skip?: number;
+    limit?: number;
+    priority?: string;
+    relevant_only?: boolean;
+  }) =>
+    request<CompanyLead[]>("GET", "/leads", undefined, {
+      skip: params?.skip,
+      limit: params?.limit ?? 200,
+      priority: params?.priority,
+      relevant_only: params?.relevant_only,
+    }),
+
+  getLead: (id: number) => request<CompanyLead>("GET", `/leads/${id}`),
+
+  createLead: (payload: Partial<CompanyLead>) =>
+    request<CompanyLead>("POST", "/leads", payload),
+
+  updateLead: (id: number, payload: Partial<CompanyLead>) =>
+    request<CompanyLead>("PATCH", `/leads/${id}`, payload),
+
+  deleteLead: (id: number) => request<void>("DELETE", `/leads/${id}`),
+
+  analyzeLead: (id: number) =>
+    request<CompanyLead>("POST", `/leads/${id}/analyze`),
+
+  runIntelligence: (id: number, crawl = true, extractPdfs = true) =>
+    request<CompanyLead>("POST", `/leads/${id}/intelligence`, undefined, {
+      crawl,
+      extract_pdfs: extractPdfs,
+    }),
+
+  updateLeadStatus: (id: number, lead_status: string) =>
+    request<CompanyLead>("PATCH", `/leads/${id}/status`, { lead_status }),
+
+  // ---- Outreach ---------------------------------------------------------
+  generateEmail: (leadId: number) =>
+    request<OutreachMessage>("POST", `/leads/${leadId}/generate-email`),
+
+  listDrafts: (params?: { skip?: number; limit?: number }) =>
+    request<OutreachMessage[]>("GET", "/outreach/drafts", undefined, {
+      skip: params?.skip,
+      limit: params?.limit ?? 100,
+    }),
+
+  listLeadMessages: (leadId: number, status?: string) =>
+    request<OutreachMessage[]>("GET", `/outreach/leads/${leadId}/messages`, undefined, {
+      status,
+    }),
+
+  // ---- CRM / Quality ----------------------------------------------------
+  ranking: (params?: { limit?: number; min_score?: number; priority?: string }) =>
+    request<RankingResponse>("GET", "/crm/ranking", undefined, {
+      limit: params?.limit ?? 50,
+      min_score: params?.min_score ?? 0,
+      priority: params?.priority,
+    }),
+
+  highValue: (limit = 50) =>
+    request<CompanyLead[]>("GET", "/crm/high-value", undefined, { limit }),
+
+  pipeline: (statuses?: string) =>
+    request<Record<string, CompanyLead[]>>("GET", "/crm/pipeline", undefined, {
+      statuses,
+    }),
+};
