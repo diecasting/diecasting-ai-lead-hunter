@@ -82,6 +82,13 @@ class CompanyLead(Base):
     )
     acquisition_channel = Column(String(120), nullable=True, index=True)
 
+    # Phase 3 Stage 3: AI lead scoring & prioritization
+    # Composite 0-100 fit score combining company fit, website intent,
+    # procurement signal, contact quality and PDF signal.
+    lead_score = Column(Integer, nullable=True, index=True)
+    lead_score_breakdown = Column(Text, nullable=True)  # JSON-encoded breakdown
+    priority = Column(String(10), nullable=True, index=True)  # HIGH/MEDIUM/LOW
+
     # --- Crawl state -------------------------------------------------------
     crawl_status = Column(
         String(20), nullable=False, default="pending", server_default="pending", index=True

@@ -39,7 +39,7 @@ def pipeline(
         leads = (
             db.query(CompanyLead)
             .filter(CompanyLead.lead_status == stage)
-            .order_by(CompanyLead.id.desc())
+            .order_by(CompanyLead.lead_score.desc().nullslast())
             .all()
         )
         result[stage] = leads
@@ -51,10 +51,12 @@ def high_value(
     db: Session = Depends(get_db),
     limit: int = Query(50, ge=1, le=500),
 ):
-    """Return HIGH-priority leads that have not yet been contacted.
+    """Return the highest-value leads that have not yet been contacted.
 
     "Not contacted" means lead_status is before ``contacted`` (new / qualified /
-    email_generated / approved). These are the hottest actionable prospects.
+    email_generated / approved) and ``sales_priority`` is HIGH. Within that set,
+    leads are auto-sorted by ``lead_score`` (descending) so the hottest,
+    highest-fit prospects come first.
     """
     leads = (
         db.query(CompanyLead)
@@ -62,8 +64,66 @@ def high_value(
             CompanyLead.sales_priority == "HIGH",
             CompanyLead.lead_status.in_(["new", "qualified", "email_generated", "approved"]),
         )
-        .order_by(CompanyLead.id.desc())
+        .order_by(
+            CompanyLead.lead_score.desc().nullslast(),
+            CompanyLead.id.desc(),
+        )
         .limit(limit)
         .all()
     )
     return leads
+
+
+@router.get("/ranking")
+def ranking(
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=500),
+    min_score: int = Query(0, ge=0, le=100, description="Only leads with lead_score >= this"),
+    priority: str = Query(
+        None, description="Filter by priority: HIGH / MEDIUM / LOW"
+    ),
+):
+    """Return the top leads ranked by the composite ``lead_score``.
+
+    Supports optional filters:
+      * ``min_score`` — only include leads scoring at least this (0–100).
+      * ``priority`` — only include leads with the given priority label.
+
+    The response groups leads by ``priority`` and also returns the flat
+    ``ranked`` list (sorted by score desc) with their score + breakdown so the
+    front-end / export can highlight *why* each lead ranks where it does.
+    """
+    valid_priority = {p for p in ("HIGH", "MEDIUM", "LOW")}
+    pfilter = (priority or "").upper().strip()
+    if pfilter and pfilter not in valid_priority:
+        pfilter = ""
+
+    query = db.query(CompanyLead)
+    if pfilter:
+        query = query.filter(CompanyLead.priority == pfilter)
+    if min_score > 0:
+        query = query.filter(CompanyLead.lead_score >= min_score)
+
+    leads = (
+        query.order_by(
+            CompanyLead.lead_score.desc().nullslast(), CompanyLead.id.desc()
+        )
+        .limit(limit)
+        .all()
+    )
+
+    grouped: Dict[str, List[CompanyLead]] = {"HIGH": [], "MEDIUM": [], "LOW": []}
+    ranked = []
+    for lead in leads:
+        grp = lead.priority or "LOW"
+        if grp not in grouped:
+            grouped[grp] = []
+        grouped[grp].append(lead)
+        ranked.append(lead)
+
+    return {
+        "count": len(ranked),
+        "filters": {"min_score": min_score, "priority": pfilter or None},
+        "by_priority": grouped,
+        "ranked": ranked,
+    }

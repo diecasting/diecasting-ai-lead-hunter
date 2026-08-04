@@ -212,6 +212,13 @@ def run_analysis(
     )
     lead.ai_analyzed_at = datetime.now(timezone.utc)
 
+    # Phase 3 Stage 3: composite lead score + priority, using the freshly
+    # written need-scores, buying-signal and procurement data, plus the lead's
+    # related contacts and PDF documents (when a DB session is available).
+    from app.ai.lead_scoring import apply_lead_score
+
+    apply_lead_score(lead, db=db)
+
     # Enrich contact e-mail if the analysis surfaced a concrete mailbox.
     rec = analysis.get("recommended_contact", "")
     if "@" in rec and not lead.contact_email:

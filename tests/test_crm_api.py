@@ -156,3 +156,141 @@ class TestHighValue:
         assert resp.status_code == 200
         # Just ensure it returns a list
         assert isinstance(resp.json(), list)
+
+
+class TestRanking:
+    """GET /crm/ranking (Phase 3 Stage 3)."""
+
+    def _post(self, client, name, website, **extra):
+        payload = {"name": name, "website": website}
+        payload.update(extra)
+        return client.post("/leads", json=payload)
+
+    def test_ranking_empty(self, client):
+        resp = client.get("/crm/ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 0
+        assert "ranked" in data
+        assert "by_priority" in data
+
+    def test_ranking_returns_sorted_top_leads(self, client):
+        # Lead A: strong fit
+        self._post(
+            client,
+            "RankA Co",
+            "https://ranka.example.com",
+            casting_need_score=90,
+            business_type="Manufacturer / OEM",
+            buying_signal="HIGH (rfq)",
+            lead_score=92,
+            priority="HIGH",
+        )
+        # Lead B: weak fit
+        self._post(
+            client,
+            "RankB Co",
+            "https://rankb.example.com",
+            casting_need_score=10,
+            lead_score=20,
+            priority="LOW",
+        )
+        resp = client.get("/crm/ranking?limit=10")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 2
+        ranked = data["ranked"]
+        # Highest score first.
+        scores = [l["lead_score"] for l in ranked]
+        assert scores == sorted(scores, reverse=True)
+        assert ranked[0]["name"] == "RankA Co"
+
+    def test_ranking_min_score_filter(self, client):
+        self._post(
+            client,
+            "RankA Co",
+            "https://ranka.example.com",
+            lead_score=92,
+            priority="HIGH",
+        )
+        self._post(
+            client,
+            "RankB Co",
+            "https://rankb.example.com",
+            lead_score=20,
+            priority="LOW",
+        )
+        resp = client.get("/crm/ranking?min_score=80")
+        assert resp.status_code == 200
+        data = resp.json()
+        names = [l["name"] for l in data["ranked"]]
+        assert "RankA Co" in names
+        assert "RankB Co" not in names
+
+    def test_ranking_priority_filter(self, client):
+        self._post(
+            client,
+            "RankA Co",
+            "https://ranka.example.com",
+            lead_score=92,
+            priority="HIGH",
+        )
+        self._post(
+            client,
+            "RankB Co",
+            "https://rankb.example.com",
+            lead_score=20,
+            priority="LOW",
+        )
+        resp = client.get("/crm/ranking?priority=LOW")
+        assert resp.status_code == 200
+        data = resp.json()
+        names = [l["name"] for l in data["ranked"]]
+        assert "RankB Co" in names
+        assert "RankA Co" not in names
+
+    def test_ranking_grouped_by_priority(self, client):
+        self._post(
+            client,
+            "RankA Co",
+            "https://ranka.example.com",
+            lead_score=92,
+            priority="HIGH",
+        )
+        self._post(
+            client,
+            "RankB Co",
+            "https://rankb.example.com",
+            lead_score=20,
+            priority="LOW",
+        )
+        resp = client.get("/crm/ranking")
+        data = resp.json()
+        assert data["by_priority"]["HIGH"][0]["name"] == "RankA Co"
+        assert data["by_priority"]["LOW"][0]["name"] == "RankB Co"
+
+    def test_high_value_sorted_by_lead_score(self, client):
+        # Two not-contacted HIGH-priority leads; highest lead_score first.
+        self._post(
+            client,
+            "HV-Low",
+            "https://hvlow.example.com",
+            sales_priority="HIGH",
+            lead_score=30,
+            priority="LOW",
+            lead_status="new",
+        )
+        self._post(
+            client,
+            "HV-High",
+            "https://hvhigh.example.com",
+            sales_priority="HIGH",
+            lead_score=88,
+            priority="HIGH",
+            lead_status="new",
+        )
+        resp = client.get("/crm/high-value")
+        assert resp.status_code == 200
+        names = [l["name"] for l in resp.json()]
+        assert names[0] == "HV-High"
+

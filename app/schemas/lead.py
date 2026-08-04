@@ -22,6 +22,9 @@ class CompanyLeadBase(BaseModel):
     do_not_contact: Optional[bool] = False
     bounce_count: Optional[int] = 0
     acquisition_channel: Optional[str] = None
+    lead_score: Optional[int] = None
+    lead_score_breakdown: Optional[str] = None
+    priority: Optional[str] = None
 
 
 class CompanyLeadCreate(CompanyLeadBase):
@@ -47,6 +50,9 @@ class CompanyLeadUpdate(BaseModel):
     do_not_contact: Optional[bool] = None
     bounce_count: Optional[int] = None
     acquisition_channel: Optional[str] = None
+    lead_score: Optional[int] = None
+    lead_score_breakdown: Optional[str] = None
+    priority: Optional[str] = None
 
 
 class CompanyLeadRead(CompanyLeadBase):
@@ -73,6 +79,9 @@ class CompanyLeadRead(CompanyLeadBase):
     do_not_contact: bool = False
     bounce_count: int = 0
     acquisition_channel: Optional[str] = None
+    lead_score: Optional[int] = None
+    lead_score_breakdown: Optional[str] = None
+    priority: Optional[str] = None
     ai_score: Optional[float] = None
     ai_relevant: Optional[bool] = None
     ai_summary: Optional[str] = None
