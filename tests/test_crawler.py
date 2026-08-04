@@ -4,6 +4,10 @@ from app.crawler.website_crawler import (
     is_path_allowed,
     parse_robots,
 )
+from app.crawler.runner import process_task
+from app.crud import crawl_tasks as crawl_tasks_crud
+from app.models.crawl_task import CrawlTask
+from app.models.lead import CompanyLead
 
 
 def _fake_fetcher(pages: dict):
@@ -94,3 +98,74 @@ def test_robots_parser():
     # root disallow blocks everything
     blocked = parse_robots("User-agent: *\nDisallow: /\n")
     assert is_path_allowed(blocked, "/anything") is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: runner.py must read ``CrawlResult.text_content`` (not the
+# non-existent ``outcome.text`` attribute, which previously raised
+# AttributeError during batch crawls and crashed the run).
+# ---------------------------------------------------------------------------
+def test_runner_persists_website_content_from_text_content(db):
+    """``process_task`` should populate ``lead.website_content`` from the
+    unified ``CrawlResult.text_content`` field and not raise on a missing
+    ``.text`` attribute."""
+    lead = CompanyLead(
+        name="Runner Test Co",
+        website="https://runner-test.com",
+        domain="runner-test.com",
+        country="USA",
+    )
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+
+    task = CrawlTask(lead_id=lead.id, domain="runner-test.com", url="https://runner-test.com", status="pending")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    pages = {
+        "https://runner-test.com": (
+            "<html><title>Runner Test</title>"
+            '<a href="/products">p</a> sales@runner-test.com</html>'
+        ),
+        "https://runner-test.com/products": "<html>products info@runner-test.com</html>",
+    }
+    crawler = WebsiteCrawler(max_pages=10, max_retries=1, fetcher=_fake_fetcher(pages))
+
+    result = process_task(db, task, crawler=crawler)
+
+    assert result["status"] == "success"
+    db.refresh(lead)
+    # The key regression assertion: website_content is populated from text_content.
+    assert lead.website_content
+    assert "Runner Test" in lead.website_content
+    assert lead.crawl_status == "success"
+    # Emails are extracted and merged onto the lead.
+    assert "sales@runner-test.com" in (lead.contact_emails or [])
+
+
+def test_runner_handles_failed_crawl_gracefully(db):
+    """When the crawl fails, ``process_task`` must not raise and the lead's
+    ``crawl_status`` is set to ``failed``."""
+
+    def always_fail(url: str) -> str:
+        raise RuntimeError("site down")
+
+    lead = CompanyLead(
+        name="Fail Co", website="https://fail-test.com", domain="fail-test.com"
+    )
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+
+    task = CrawlTask(lead_id=lead.id, domain="fail-test.com", url="https://fail-test.com", status="pending")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    crawler = WebsiteCrawler(max_pages=5, max_retries=1, fetcher=always_fail)
+    result = process_task(db, task, crawler=crawler)
+    assert result["status"] == "failed"
+    db.refresh(lead)
+    assert lead.crawl_status == "failed"

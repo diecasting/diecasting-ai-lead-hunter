@@ -79,7 +79,12 @@ def is_path_allowed(rules: Dict[str, List[str]], path: str) -> bool:
 
 @dataclass
 class CrawlResult:
-    """Structured crawl outcome matching the Phase 2.2 spec output."""
+    """Structured crawl outcome matching the Phase 2.2 spec output.
+
+    Canonical text field is ``text_content``. A ``text`` alias property is kept
+    for backward compatibility so callers referencing either name work; new code
+    should use ``text_content``.
+    """
 
     url: str
     pages_found: List[str] = field(default_factory=list)
@@ -89,6 +94,11 @@ class CrawlResult:
     pages_crawled: int = 0
     crawl_time: Optional[datetime] = None
     error: str = ""
+
+    @property
+    def text(self) -> str:
+        """Alias for ``text_content`` (backward compatibility)."""
+        return self.text_content
 
     def to_dict(self) -> dict:
         return {

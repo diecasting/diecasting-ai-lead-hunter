@@ -45,6 +45,46 @@ def create_lead(payload: CompanyLeadCreate, db: Session = Depends(get_db)):
     return crud.create(db, obj_in=payload)
 
 
+@router.get("/high-priority", response_model=List[CompanyLeadRead])
+def get_high_priority_leads(
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Return the most sales-worthy leads, sorted by score descending.
+
+    A lead qualifies as *high-priority* when ``sales_priority`` is ``HIGH``
+    (best need-score ≥ 80). If fewer than ``limit`` HIGH leads exist, the
+    remaining slots are filled with MEDIUM leads so the sales team always
+    has a actionable shortlist.
+
+    NOTE: declared *before* ``/leads/{lead_id}`` so FastAPI matches the static
+    path first and ``GET /leads/high-priority`` does not collide with the
+    ``{lead_id: int}`` path parameter (which would raise 422 on a non-int value).
+    """
+    high = (
+        db.query(CompanyLead)
+        .filter(CompanyLead.sales_priority == "HIGH")
+        .order_by(CompanyLead.ai_score.desc().nullslast(), CompanyLead.id.desc())
+        .limit(limit)
+        .all()
+    )
+    remaining = limit - len(high)
+    if remaining > 0:
+        high_ids = {l.id for l in high}
+        medium = (
+            db.query(CompanyLead)
+            .filter(
+                CompanyLead.sales_priority == "MEDIUM",
+                CompanyLead.id.notin_(high_ids) if high_ids else True,
+            )
+            .order_by(CompanyLead.ai_score.desc().nullslast(), CompanyLead.id.desc())
+            .limit(remaining)
+            .all()
+        )
+        high.extend(medium)
+    return high
+
+
 @router.get("/{lead_id}", response_model=CompanyLeadRead)
 def get_lead(lead_id: int, db: Session = Depends(get_db)):
     obj = crud.get(db, lead_id)
@@ -128,42 +168,6 @@ def crawl_pending(
 # ---------------------------------------------------------------------------
 # Phase 2.3: Industrial AI Lead Intelligence
 # ---------------------------------------------------------------------------
-@router.get("/high-priority", response_model=List[CompanyLeadRead])
-def get_high_priority_leads(
-    db: Session = Depends(get_db),
-    limit: int = Query(50, ge=1, le=500),
-):
-    """Return the most sales-worthy leads, sorted by score descending.
-
-    A lead qualifies as *high-priority* when ``sales_priority`` is ``HIGH``
-    (best need-score ≥ 80). If fewer than ``limit`` HIGH leads exist, the
-    remaining slots are filled with MEDIUM leads so the sales team always
-    has a actionable shortlist.
-    """
-    high = (
-        db.query(CompanyLead)
-        .filter(CompanyLead.sales_priority == "HIGH")
-        .order_by(CompanyLead.ai_score.desc().nullslast(), CompanyLead.id.desc())
-        .limit(limit)
-        .all()
-    )
-    remaining = limit - len(high)
-    if remaining > 0:
-        high_ids = {l.id for l in high}
-        medium = (
-            db.query(CompanyLead)
-            .filter(
-                CompanyLead.sales_priority == "MEDIUM",
-                CompanyLead.id.notin_(high_ids) if high_ids else True,
-            )
-            .order_by(CompanyLead.ai_score.desc().nullslast(), CompanyLead.id.desc())
-            .limit(remaining)
-            .all()
-        )
-        high.extend(medium)
-    return high
-
-
 @router.post("/{lead_id}/intelligence", response_model=CompanyLeadRead)
 def run_intelligence(
     lead_id: int,
@@ -216,9 +220,13 @@ def run_intelligence(
     # Step 2: extract PDF documents (if enabled).
     if extract_pdfs and obj.website:
         try:
-            from app.crawler.pdf_extractor import PDFExtractor
+            from app.crawler.pdf_extractor import PDFExtractor, build_default_fetcher
 
-            extractor = PDFExtractor()
+            # Inject a real HTTP fetcher so PDF discovery can probe the site's
+            # document paths. Tests bypass this by constructing PDFExtractor
+            # with a mock fetcher directly.
+            fetcher = build_default_fetcher()
+            extractor = PDFExtractor(fetcher=fetcher)
             home_html = obj.website_content or ""
             pdf_result = extractor.extract_for_lead(db, obj, home_html=home_html)
             # Merge PDF text into the analysis input.

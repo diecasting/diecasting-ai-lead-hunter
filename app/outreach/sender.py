@@ -43,6 +43,7 @@ def send_email(
     *,
     sender_email: Optional[str] = None,
     dry_run: Optional[bool] = None,
+    transport=None,
 ) -> dict:
     """Send an ``OutreachMessage`` via SMTP and record tracking data.
 
@@ -53,6 +54,10 @@ def send_email(
         sender_email: Override From address (defaults to settings.smtp_user).
         dry_run: Force dry-run mode (record but don't actually send). When
             None, dry-run is enabled automatically if SMTP is not configured.
+        transport: Injectable SMTP transport for tests (any object exposing
+            ``starttls()`` / ``login()`` / ``send_message()``). When provided,
+            it is used instead of opening a real ``smtplib.SMTP`` connection,
+            giving full mock-replaceability of the IO boundary.
 
     Returns:
         Delivery receipt dict with success / dry_run / sender / recipient / sent_at.
@@ -67,11 +72,15 @@ def send_email(
     if not is_dry_run:
         try:
             email_msg = _build_message(message.subject, message.body, sender, recipient_email)
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-                if settings.smtp_use_tls:
-                    server.starttls()
-                server.login(settings.smtp_user, settings.smtp_password)
-                server.send_message(email_msg)
+            if transport is not None:
+                # Injected transport — no real network connection.
+                _deliver_via_transport(transport, email_msg)
+            else:
+                with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                    if settings.smtp_use_tls:
+                        server.starttls()
+                    server.login(settings.smtp_user, settings.smtp_password)
+                    server.send_message(email_msg)
         except Exception as exc:  # pragma: no cover - network/SMTP dependent
             success = False
             error = str(exc)
@@ -97,6 +106,15 @@ def send_email(
         "dry_run": is_dry_run,
         "error": error,
     }
+
+
+def _deliver_via_transport(transport, email_msg: EmailMessage) -> None:
+    """Drive an injectable SMTP-like transport (used for mocked sends)."""
+    if getattr(transport, "starttls", None) is not None and settings.smtp_use_tls:
+        transport.starttls()
+    if getattr(transport, "login", None) is not None:
+        transport.login(settings.smtp_user, settings.smtp_password)
+    transport.send_message(email_msg)
 
 
 def send_message_by_id(

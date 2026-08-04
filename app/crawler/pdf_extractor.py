@@ -278,6 +278,30 @@ class PDFExtractor:
         db.add(lead)
 
 
+def build_default_fetcher(timeout: float = 20.0):
+    """Build a production HTTP fetcher (url -> bytes) using ``requests``.
+
+    Returns ``None`` when ``requests`` is unavailable so callers can decide
+    whether to fall back to a browser-based fetcher or skip PDF discovery. The
+    fetcher is injectable for tests via ``PDFExtractor(fetcher=...)``.
+    """
+    try:
+        import requests
+    except ImportError:  # pragma: no cover - requests is a hard dependency
+        return None
+
+    def _fetch(url: str) -> bytes:
+        resp = requests.get(
+            url,
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0 (diecasting-ai-lead-hunter)"},
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    return _fetch
+
+
 def extract_pdf_documents(
     db: Session, lead, home_html: str = "", fetcher=None, text_extractor=None
 ) -> dict:

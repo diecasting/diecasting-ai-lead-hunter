@@ -43,11 +43,12 @@ def process_task(db: Session, task, crawler: Optional[WebsiteCrawler] = None) ->
         if outcome.emails and not lead.contact_email:
             lead.contact_email = outcome.emails[0]
         lead.pages_crawled = outcome.pages_crawled
-        lead.website_content = outcome.text
+        # Unified result interface: CrawlResult exposes `text_content`.
+        lead.website_content = outcome.text_content
         lead.crawl_time = outcome.crawl_time
         # Store a text sample so the AI analyser has material to score.
-        if outcome.text:
-            lead.description = (lead.description or "") + "\n" + outcome.text
+        if outcome.text_content:
+            lead.description = (lead.description or "") + "\n" + outcome.text_content
             lead.description = lead.description[-4000:]
         lead.crawl_status = "success"
         db.add(lead)
