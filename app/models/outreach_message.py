@@ -37,6 +37,12 @@ class OutreachMessage(Base):
     )
     followup_seq = Column(Integer, nullable=False, default=0, server_default="0")
 
+    # Phase 3 Stage 1: engagement tracking + HTML body
+    tracking_token = Column(String(128), nullable=True, unique=True, index=True)
+    open_count = Column(Integer, nullable=False, default=0, server_default="0")
+    click_count = Column(Integer, nullable=False, default=0, server_default="0")
+    html_body = Column(Text, nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     lead = relationship("CompanyLead", backref="outreach_messages", lazy="selectin")

@@ -21,6 +21,10 @@ class OutreachMessageRead(BaseModel):
     recipient: Optional[str] = None
     is_followup: bool = False
     followup_seq: int = 0
+    tracking_token: Optional[str] = None
+    open_count: int = 0
+    click_count: int = 0
+    html_body: Optional[str] = None
     created_at: datetime
 
 

@@ -73,6 +73,15 @@ class CompanyLead(Base):
     last_activity_time = Column(DateTime(timezone=True), nullable=True)
     next_followup_date = Column(DateTime(timezone=True), nullable=True)
 
+    # Phase 3 Stage 1: CRM data model upgrade
+    do_not_contact = Column(
+        Boolean, nullable=False, default=False, server_default="0", index=True
+    )
+    bounce_count = Column(
+        Integer, nullable=False, default=0, server_default="0", index=True
+    )
+    acquisition_channel = Column(String(120), nullable=True, index=True)
+
     # --- Crawl state -------------------------------------------------------
     crawl_status = Column(
         String(20), nullable=False, default="pending", server_default="pending", index=True

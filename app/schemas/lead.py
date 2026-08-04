@@ -19,6 +19,9 @@ class CompanyLeadBase(BaseModel):
     source: Optional[str] = None
     lead_status: Optional[str] = "new"
     sales_priority: Optional[str] = None
+    do_not_contact: Optional[bool] = False
+    bounce_count: Optional[int] = 0
+    acquisition_channel: Optional[str] = None
 
 
 class CompanyLeadCreate(CompanyLeadBase):
@@ -41,6 +44,9 @@ class CompanyLeadUpdate(BaseModel):
     source: Optional[str] = None
     lead_status: Optional[str] = None
     sales_priority: Optional[str] = None
+    do_not_contact: Optional[bool] = None
+    bounce_count: Optional[int] = None
+    acquisition_channel: Optional[str] = None
 
 
 class CompanyLeadRead(CompanyLeadBase):
@@ -64,6 +70,9 @@ class CompanyLeadRead(CompanyLeadBase):
     lead_status: str = "new"
     last_activity_time: Optional[datetime] = None
     next_followup_date: Optional[datetime] = None
+    do_not_contact: bool = False
+    bounce_count: int = 0
+    acquisition_channel: Optional[str] = None
     ai_score: Optional[float] = None
     ai_relevant: Optional[bool] = None
     ai_summary: Optional[str] = None

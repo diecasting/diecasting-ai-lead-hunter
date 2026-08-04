@@ -6,11 +6,17 @@ reads from.
 """
 from app.models.ai_analysis import AIAnalysis
 from app.models.company_document import CompanyDocument
+from app.models.contact import Contact
 from app.models.crawl_task import CrawlTask
+from app.models.email_verification import EmailVerification
+from app.models.email_tracking import EmailTracking
 from app.models.lead import CompanyLead
+from app.models.lead_source import LeadSource
 from app.models.outreach_event import OutreachEvent
 from app.models.outreach_message import OutreachMessage
+from app.models.reply_inbox import ReplyInbox
 from app.models.search_result import SearchResult
+from app.models.unsubscribe import Unsubscribe
 
 __all__ = [
     "CompanyLead",
@@ -20,4 +26,10 @@ __all__ = [
     "CompanyDocument",
     "OutreachMessage",
     "OutreachEvent",
+    "Contact",
+    "LeadSource",
+    "EmailVerification",
+    "EmailTracking",
+    "ReplyInbox",
+    "Unsubscribe",
 ]
