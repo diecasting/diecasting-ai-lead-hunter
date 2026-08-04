@@ -111,17 +111,34 @@ def approve_and_send(
     recipient_email: str,
     *,
     dry_run: bool = True,
+    gate=None,
+    force: bool = False,
 ) -> dict:
     """Approve a draft email, send it, and advance the pipeline.
 
+    The optional ``gate`` (an ``EmailQualityGate`` / ``BaseEmailVerifier``) is
+    consulted before delivery; a blocked recipient returns a refused receipt and
+    the pipeline is NOT advanced to ``contacted``. Pass ``force=True`` to bypass.
+
     Returns the send receipt from ``sender.send_email``.
     """
+    from app.crud import contacts as contacts_crud
+
+    # Resolve a related Contact (for the gate's do_not_contact check) if the
+    # message is tied to one via tracking_token / recipient.
+    contact = None
+    if getattr(message, "tracking_token", None):
+        contact = contacts_crud.get_by_email(db, recipient_email)
+
     # Approve
     if lead.lead_status == "email_generated":
         transition(lead, "approved", db=db)
 
-    # Send
-    receipt = send_email(db, message, recipient_email, dry_run=dry_run)
+    # Send (quality gate screens the recipient first)
+    receipt = send_email(
+        db, message, recipient_email, dry_run=dry_run, gate=gate, lead=lead,
+        contact=contact, force=force,
+    )
     if receipt.get("success"):
         transition(lead, "contacted", db=db)
         # Schedule follow-ups relative to sent time.

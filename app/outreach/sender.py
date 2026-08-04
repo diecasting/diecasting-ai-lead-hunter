@@ -44,6 +44,10 @@ def send_email(
     sender_email: Optional[str] = None,
     dry_run: Optional[bool] = None,
     transport=None,
+    gate=None,
+    lead=None,
+    contact=None,
+    force: bool = False,
 ) -> dict:
     """Send an ``OutreachMessage`` via SMTP and record tracking data.
 
@@ -58,12 +62,38 @@ def send_email(
             ``starttls()`` / ``login()`` / ``send_message()``). When provided,
             it is used instead of opening a real ``smtplib.SMTP`` connection,
             giving full mock-replaceability of the IO boundary.
+        gate: Optional :class:`EmailQualityGate` (or any ``BaseEmailVerifier``).
+            When supplied, the recipient is screened *before* delivery; a
+            blocked verdict (invalid / risky / do_not_contact) returns a
+            refused receipt and no message is sent. Pass ``force=True`` to
+            bypass the gate (e.g. operator override).
+        lead / contact: Related ORM rows used by the gate's do_not_contact check.
+        force: Bypass the quality gate entirely.
 
     Returns:
         Delivery receipt dict with success / dry_run / sender / recipient / sent_at.
+        A refused send carries ``{"success": False, "blocked": True, ...}``.
     """
     sender = sender_email or settings.smtp_user or "noreply@diecasting-ai-lead-hunter.local"
     is_dry_run = dry_run if dry_run is not None else (not _smtp_configured())
+
+    # --- Outreach quality gate (Phase 4 Stage 0) ---------------------------
+    if gate is not None and not force:
+        verdict = gate.allow_send(
+            recipient_email, lead=lead, contact=contact, db=db
+        )
+        if verdict.is_blocked():
+            return {
+                "success": False,
+                "blocked": True,
+                "sender": sender,
+                "recipient": recipient_email,
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "message_id": message.id,
+                "dry_run": is_dry_run,
+                "error": f"quality gate blocked: {verdict.reason}",
+                "verdict": verdict.to_dict(),
+            }
 
     sent_at = datetime.now(timezone.utc)
     success = True

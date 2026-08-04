@@ -83,6 +83,9 @@ class EmailVerificationCreate(BaseModel):
     status: str = "unknown"
     is_deliverable: Optional[str] = None
     reason: Optional[str] = None
+    score: Optional[int] = None
+    verifier: Optional[str] = None
+    checks: Optional[str] = None
 
 
 class EmailVerificationRead(BaseModel):
@@ -95,6 +98,9 @@ class EmailVerificationRead(BaseModel):
     status: str
     is_deliverable: Optional[str] = None
     reason: Optional[str] = None
+    score: Optional[int] = None
+    verifier: Optional[str] = None
+    checks: Optional[str] = None
     checked_at: datetime
 
 
