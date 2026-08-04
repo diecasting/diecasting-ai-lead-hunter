@@ -1,16 +1,17 @@
-"""Lead API routes: CRUD plus crawl/ingest and AI-analysis endpoints."""
+"""Lead API routes: CRUD plus crawl/ingest, AI-analysis, and search endpoints."""
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.ai.analyzer import analyze_company, analysis_to_columns
+from app.ai.analyzer import run_analysis
 from app.config import settings
-from app.crawler.crawler import crawl as run_crawl
+from app.crawler.runner import process_pending
 from app.crud import leads as crud
 from app.database import get_db
 from app.models.lead import CompanyLead
 from app.schemas.lead import CompanyLeadCreate, CompanyLeadRead, CompanyLeadUpdate
+from app.search.service import SearchService
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -21,8 +22,16 @@ def list_leads(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     relevant_only: bool = False,
+    priority: str = Query(None, description="Filter by sales_priority: HIGH/MEDIUM/LOW"),
 ):
-    return crud.get_multi(db, skip=skip, limit=limit, relevant_only=relevant_only)
+    query = db.query(CompanyLead)
+    if relevant_only:
+        query = query.filter(CompanyLead.ai_relevant.is_(True))
+    if priority:
+        query = query.filter(CompanyLead.sales_priority == priority.upper())
+    return (
+        query.order_by(CompanyLead.id.desc()).offset(skip).limit(limit).all()
+    )
 
 
 @router.post("", response_model=CompanyLeadRead, status_code=201)
@@ -59,53 +68,54 @@ def delete_lead(lead_id: int, db: Session = Depends(get_db)):
 def ingest_from_web(
     db: Session = Depends(get_db),
     query: str = Query("aluminum die casting manufacturer"),
-    max_results: int = Query(10, ge=1, le=50),
+    country: str = Query("us"),
+    max_results: int = Query(20, ge=1, le=50),
 ):
-    """Crawl the web for die-casting companies and persist them as leads.
+    """Search Google for die-casting companies and persist them as leads.
 
-    De-duplicates by website. Requires Playwright browsers to be installed.
+    Creates ``company_leads`` (dedup by homepage) plus a ``crawl_tasks`` row
+    each, ready for the crawler / scheduler. Requires Playwright browsers.
     """
     try:
-        companies = run_crawl(query=query, max_results=max_results)
+        report = SearchService().run_search(
+            db, query, country=country, max_results=max_results
+        )
     except Exception as exc:  # pragma: no cover - depends on network/browser
-        raise HTTPException(status_code=502, detail=f"Crawl failed: {exc}")
+        raise HTTPException(status_code=502, detail=f"Search failed: {exc}")
 
-    created: List[CompanyLead] = []
-    for company in companies:
-        website = company.get("website")
-        if website and crud.get_by_website(db, website):
-            continue
-        payload = CompanyLeadCreate(**company)
-        created.append(crud.create(db, obj_in=payload))
-    return created
+    leads = [crud.get(db, lid) for lid in report["created_lead_ids"]]
+    leads = [l for l in leads if l is not None]
+    return leads
 
 
 @router.post("/{lead_id}/analyze", response_model=CompanyLeadRead)
 def analyze_lead(lead_id: int, db: Session = Depends(get_db)):
-    """Run the AI analysis on a single lead and store the enrichment results."""
+    """Run the AI analysis / casting-need scoring on a single lead.
+
+    Works without an OpenAI key (deterministic rule-based scoring). When a key
+    is configured, the English summary is enriched by the LLM.
+    """
     obj = crud.get(db, lead_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Lead not found")
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=400, detail="OPENAI_API_KEY is not configured")
-
-    lead_dict = {
-        "name": obj.name,
-        "website": obj.website,
-        "industry": obj.industry,
-        "description": obj.description,
-        "country": obj.country,
-        "employee_count": obj.employee_count,
-    }
     try:
-        analysis = analyze_company(lead_dict)
+        run_analysis(db, obj, crawled_text=obj.description or "")
     except Exception as exc:  # pragma: no cover - depends on OpenAI
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}")
-
-    columns = analysis_to_columns(analysis)
-    for field, value in columns.items():
-        setattr(obj, field, value)
-    db.add(obj)
-    db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.post("/crawl/pending", response_model=dict)
+def crawl_pending(
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Crawl all currently ``pending`` crawl tasks (or use the scheduler)."""
+    try:
+        from app.crawler.website_crawler import WebsiteCrawler
+
+        report = process_pending(db, limit=limit, crawler=WebsiteCrawler())
+    except Exception as exc:  # pragma: no cover - depends on browser/network
+        raise HTTPException(status_code=502, detail=f"Crawl failed: {exc}")
+    return report

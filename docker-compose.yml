@@ -22,9 +22,13 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/leadhunter
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY in your environment}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       CRAWLER_HEADLESS: "true"
+      CRAWLER_MAX_RETRIES: "3"
+      SCHEDULER_ENABLED: "false"
+      SCHEDULER_HOUR: "6"
+      SCHEDULER_MINUTE: "0"
       DEBUG: "true"
     ports:
       - "8000:8000"

@@ -24,20 +24,19 @@ def get_multi(
     return query.order_by(CompanyLead.id.desc()).offset(skip).limit(limit).all()
 
 
-def create(db: Session, *, obj_in: CompanyLeadCreate) -> CompanyLead:
-    db_obj = CompanyLead(
-        name=obj_in.name,
-        website=obj_in.website,
-        domain=obj_in.domain,
-        country=obj_in.country,
-        region=obj_in.region,
-        industry=obj_in.industry,
-        description=obj_in.description,
-        employee_count=obj_in.employee_count,
-        contact_email=obj_in.contact_email,
-        contact_phone=obj_in.contact_phone,
-        source=obj_in.source,
-    )
+def create(
+    db: Session,
+    *,
+    obj_in: Optional[CompanyLeadCreate] = None,
+    **fields,
+) -> CompanyLead:
+    """Create a lead from a schema OR from explicit column keyword arguments."""
+    if obj_in is not None:
+        data = obj_in.model_dump(exclude_unset=True)
+    else:
+        data = {}
+    data.update(fields)
+    db_obj = CompanyLead(**data)
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
@@ -45,9 +44,13 @@ def create(db: Session, *, obj_in: CompanyLeadCreate) -> CompanyLead:
 
 
 def update(
-    db: Session, *, db_obj: CompanyLead, obj_in: CompanyLeadUpdate
+    db: Session, *, db_obj: CompanyLead, obj_in: Optional[CompanyLeadUpdate] = None, **fields
 ) -> CompanyLead:
-    data = obj_in.model_dump(exclude_unset=True)
+    if obj_in is not None:
+        data = obj_in.model_dump(exclude_unset=True)
+    else:
+        data = {}
+    data.update(fields)
     for field, value in data.items():
         setattr(db_obj, field, value)
     db.add(db_obj)

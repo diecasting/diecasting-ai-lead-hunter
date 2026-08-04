@@ -24,6 +24,22 @@ class Settings(BaseSettings):
     # Crawler
     crawler_headless: bool = True
     crawler_max_pages: int = 50
+    crawler_max_retries: int = 3
+    crawler_request_timeout: int = 30000  # ms
+
+    # Search (Google SERP)
+    search_country_default: str = "us"
+    search_max_results_default: int = 20
+    keywords_file: str = "data/keywords.txt"
+
+    # Export
+    export_dir: str = "data/exports"
+
+    # Scheduler (APScheduler)
+    scheduler_enabled: bool = False
+    scheduler_hour: int = 6
+    scheduler_minute: int = 0
+    scheduler_max_results: int = 20
 
     @property
     def sqlalchemy_database_uri(self) -> str:

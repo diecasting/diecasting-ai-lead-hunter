@@ -101,10 +101,21 @@ def test_delete_lead():
     assert missing.status_code == 404
 
 
-def test_analyze_requires_openai_key():
+def test_analyze_rule_based_works_without_openai_key():
     client = _make_client()
-    created = client.post("/leads", json={"name": "Delta Components"})
+    created = client.post(
+        "/leads",
+        json={
+            "name": "Delta Components automotive EV aluminum",
+            "industry": "Die casting",
+        },
+    )
     lead_id = created.json()["id"]
-    # OPENAI_API_KEY is empty in the test env -> 400
+    # Phase 2.3 analysis is rule-based and works without an OpenAI key.
     resp = client.post(f"/leads/{lead_id}/analyze")
-    assert resp.status_code == 400
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "casting_need_score" in data
+    assert data["sales_priority"] in ("HIGH", "MEDIUM", "LOW")
+    # The sample text contains automotive/EV/aluminum -> high score.
+    assert data["casting_need_score"] >= 80

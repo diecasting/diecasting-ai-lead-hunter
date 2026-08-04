@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     Integer,
+    JSON,
     String,
     Text,
 )
@@ -52,6 +53,19 @@ class CompanyLead(Base):
     ai_summary = Column(Text, nullable=True)           # natural-language summary
     ai_signals = Column(Text, nullable=True)           # JSON-encoded list[str]
     ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Phase 2: dedicated casting-need scoring
+    casting_need_score = Column(Integer, nullable=True, index=True)  # 0-100
+    sales_priority = Column(String(10), nullable=True, index=True)   # HIGH/MEDIUM/LOW
+
+    # --- Crawl state -------------------------------------------------------
+    crawl_status = Column(
+        String(20), nullable=False, default="pending", server_default="pending", index=True
+    )
+    contact_emails = Column(JSON, nullable=True)          # list[str] of company e-mails
+    pages_crawled = Column(Integer, nullable=False, default=0, server_default="0")
+    website_content = Column(Text, nullable=True)         # concatenated crawled text
+    crawl_time = Column(DateTime(timezone=True), nullable=True)
 
     # --- Timestamps --------------------------------------------------------
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)

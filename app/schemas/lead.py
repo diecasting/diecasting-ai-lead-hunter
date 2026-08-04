@@ -45,6 +45,12 @@ class CompanyLeadRead(CompanyLeadBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    crawl_status: str = "pending"
+    contact_emails: Optional[list] = None
+    pages_crawled: int = 0
+    crawl_time: Optional[datetime] = None
+    casting_need_score: Optional[int] = None
+    sales_priority: Optional[str] = None
     ai_score: Optional[float] = None
     ai_relevant: Optional[bool] = None
     ai_summary: Optional[str] = None
