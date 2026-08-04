@@ -132,6 +132,108 @@ def analyze_capabilities(text: str) -> Dict[str, object]:
     }
 
 
+# PDF type classification (Phase 3 Stage 2) --------------------------------
+# We classify a document into one of three industrial intelligence buckets so
+# the CRM can weight its extracted signals appropriately:
+#   * capability  — states what the supplier can MAKE (tonnage, tolerance, certs)
+#   * catalog     — a product list / brochure of parts and services
+#   * technical   — spec sheets / drawings / process documentation
+PDF_TYPE_CAPABILITY = "capability"
+PDF_TYPE_CATALOG = "catalog"
+PDF_TYPE_TECHNICAL = "technical"
+PDF_TYPE_UNKNOWN = "unknown"
+
+# Filename tokens that hint at a document's purpose.
+_CAPABILITY_TOKENS = ["capability", "capabilty", "brochure", "profile", "overview", "company"]
+_CATALOG_TOKENS = ["catalog", "catalogue", "product", "products", "range", "line-card", "linecard"]
+_TECHNICAL_TOKENS = ["spec", "technical", "datasheet", "drawing", "drawings", "manual", "tds", "msds"]
+
+# Body-text signals that disambiguate when the filename is generic.
+_CAPABILITY_BODY = [
+    "clamping force",
+    "tonnage",
+    "shot weight",
+    "cavity",
+    "machine capacity",
+    "our capabilities",
+    "manufacturing capabilities",
+    "iatf 16949",
+    "iso 9001 certified",
+]
+_CATALOG_BODY = [
+    "product list",
+    "our products",
+    "product range",
+    "part number",
+    "item no",
+    "model",
+    "catalog",
+    "brochure",
+]
+_TECHNICAL_BODY = [
+    "technical specification",
+    "specifications",
+    "datasheet",
+    "tolerance ±",
+    "material specification",
+    "drawing",
+    "engineering",
+]
+
+
+def classify_pdf_type(url: str = "", text: str = "") -> str:
+    """Classify a PDF into capability / catalog / technical / unknown.
+
+    Filename tokens are checked first (strongest signal); if ambiguous, body-text
+    heuristics break the tie. Returns one of the ``PDF_TYPE_*`` constants.
+    """
+    low_url = (url or "").lower()
+    low_text = (text or "").lower()
+
+    url_scores = {"capability": 0, "catalog": 0, "technical": 0}
+    for tok in _CAPABILITY_TOKENS:
+        if tok in low_url:
+            url_scores["capability"] += 1
+    for tok in _CATALOG_TOKENS:
+        if tok in low_url:
+            url_scores["catalog"] += 1
+    for tok in _TECHNICAL_TOKENS:
+        if tok in low_url:
+            url_scores["technical"] += 1
+
+    # Strong filename signal → decide immediately.
+    best_url = max(url_scores, key=url_scores.get)
+    if url_scores[best_url] > 0 and url_scores[best_url] >= 2 * (sum(url_scores.values()) - url_scores[best_url]):
+        return {
+            "capability": PDF_TYPE_CAPABILITY,
+            "catalog": PDF_TYPE_CATALOG,
+            "technical": PDF_TYPE_TECHNICAL,
+        }[best_url]
+
+    # Otherwise fall back to body-text heuristics.
+    body_scores = {
+        "capability": sum(1 for s in _CAPABILITY_BODY if s in low_text),
+        "catalog": sum(1 for s in _CATALOG_BODY if s in low_text),
+        "technical": sum(1 for s in _TECHNICAL_BODY if s in low_text),
+    }
+    best_body = max(body_scores, key=body_scores.get)
+    if body_scores[best_body] > 0:
+        return {
+            "capability": PDF_TYPE_CAPABILITY,
+            "catalog": PDF_TYPE_CATALOG,
+            "technical": PDF_TYPE_TECHNICAL,
+        }[best_body]
+
+    # Filename gave a single weak hint; use it.
+    if url_scores[best_url] > 0:
+        return {
+            "capability": PDF_TYPE_CAPABILITY,
+            "catalog": PDF_TYPE_CATALOG,
+            "technical": PDF_TYPE_TECHNICAL,
+        }[best_url]
+    return PDF_TYPE_UNKNOWN
+
+
 def extract_pdf_text(pdf_bytes: bytes, text_extractor=None) -> str:
     """Extract plain text from PDF bytes.
 
@@ -155,6 +257,7 @@ class PDFExtractionResult:
     materials_found: List[str] = field(default_factory=list)
     processes_found: List[str] = field(default_factory=list)
     certifications_found: List[str] = field(default_factory=list)
+    pdf_types: List[str] = field(default_factory=list)
     status: str = "success"
     error: str = ""
 
@@ -165,6 +268,7 @@ class PDFExtractionResult:
             "materials_found": self.materials_found,
             "processes_found": self.processes_found,
             "certifications_found": self.certifications_found,
+            "pdf_types": self.pdf_types,
             "status": self.status,
             "error": self.error,
         }
@@ -222,12 +326,20 @@ class PDFExtractor:
             if not text:
                 continue
             caps = analyze_capabilities(text)
+            pdf_type = classify_pdf_type(url=url, text=text)
             doc_crud.create(
-                db, lead_id=lead.id, url=url, file_type="pdf", content=text[:20000]
+                db, lead_id=lead.id, url=url, file_type=pdf_type, content=text[:20000]
             )
             result.documents.append(
-                {"url": url, "file_type": "pdf", "capabilities": caps}
+                {
+                    "url": url,
+                    "file_type": "pdf",
+                    "pdf_type": pdf_type,
+                    "capabilities": caps,
+                }
             )
+            if pdf_type not in result.pdf_types:
+                result.pdf_types.append(pdf_type)
             all_materials.update(caps.get("materials") or [])
             all_processes.update(caps.get("processes") or [])
             all_certs.update(caps.get("certifications") or [])

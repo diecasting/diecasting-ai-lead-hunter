@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.ai.analyzer import run_analysis
+from app.ai.procurement_signals import analyze_procurement_signals
 from app.config import settings
 from app.crawler.runner import process_pending
 from app.crud import leads as crud
@@ -211,6 +212,16 @@ def run_intelligence(
                 obj.crawl_time = datetime.now(timezone.utc)
                 db.add(obj)
                 db.commit()
+                # Persist structured human contacts into the contacts table.
+                try:
+                    from app.crawler.contact_extractor import extract_and_persist
+
+                    extract_and_persist(
+                        db, obj.id, website_text, site_domain=obj.domain or ""
+                    )
+                except Exception:
+                    # Contact persistence is best-effort.
+                    pass
         except Exception as exc:  # pragma: no cover - depends on browser/network
             # Crawl failure should not block the analysis pipeline.
             obj.crawl_status = "failed"
@@ -236,12 +247,38 @@ def run_intelligence(
         except Exception:  # pragma: no cover - depends on network/PDF libs
             pass
 
-    # Step 3 + 4: AI analysis + ranking.
+    # Step 3 + 4: AI analysis + ranking (+ procurement signals).
     try:
         crawled_text = " ".join(
             t for t in [obj.website_content or "", pdf_text] if t
         )
         run_analysis(db, obj, crawled_text=crawled_text)
+
+        # Phase 3 Stage 2: industrial procurement-signal analysis.
+        procurement = analyze_procurement_signals(crawled_text)
+        try:
+            import json as _json
+
+            existing = {}
+            if obj.ai_signals:
+                try:
+                    existing = _json.loads(obj.ai_signals)
+                except Exception:
+                    existing = {}
+            existing["procurement_signals"] = {
+                "score": procurement["procurement_score"],
+                "type": procurement["procurement_type"],
+                "components": {
+                    k: {"score": v["score"], "matched": v["matched"]}
+                    for k, v in procurement["components"].items()
+                },
+            }
+            obj.ai_signals = _json.dumps(existing, ensure_ascii=False)
+            db.add(obj)
+            db.commit()
+        except Exception:
+            # Procurement enrichment is best-effort.
+            pass
     except Exception as exc:  # pragma: no cover - depends on OpenAI
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}")
 
