@@ -3,6 +3,8 @@
 // VITE_API_BASE to override (e.g. a deployed backend URL) at build time.
 import type {
   CompanyLead,
+  CreateJobResponse,
+  DiscoveryJob,
   DiscoveryResult,
   LeadImportPreview,
   LeadImportSummary,
@@ -175,4 +177,14 @@ export const api = {
 
   addDiscoveryToCrm: (discoveryId: number) =>
     request<CompanyLead>("POST", `/discovery/${discoveryId}/lead`),
+
+  // ---- Discovery jobs (Phase 5 Stage 2) ---------------------------------
+  createDiscoveryJob: (keyword: string) =>
+    request<CreateJobResponse>("POST", "/discovery/jobs", { keyword }),
+
+  getDiscoveryJob: (jobId: number) =>
+    request<DiscoveryJob>("GET", `/discovery/jobs/${jobId}`),
+
+  runDiscoveryJob: (jobId: number) =>
+    request<DiscoveryJob>("POST", `/discovery/jobs/${jobId}/run`),
 };

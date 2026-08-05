@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.crud import leads as leads_crud
 from app.database import get_db
 from app.discovery import crud as discovery_crud
+from app.discovery import queue as discovery_queue
 from app.discovery.analyzer import analyze_website
 from app.models.company_discovery import CompanyDiscovery
 from app.schemas.lead import CompanyLeadRead
@@ -30,6 +31,74 @@ class AnalyzeUrlRequest(BaseModel):
     """Payload: the prospect's website URL to analyse."""
 
     url: str
+
+
+class CreateJobRequest(BaseModel):
+    """Payload: the search keyword driving a batch discovery job."""
+
+    keyword: str
+
+
+class JobTaskRead(BaseModel):
+    """One analysed URL within a discovery job."""
+
+    id: int
+    url: str
+    status: str  # pending | analyzed | failed | skipped
+    discovery_id: Optional[int] = None
+    error_message: Optional[str] = None
+    company_name: Optional[str] = None
+    lead_score: Optional[int] = None
+    confidence_score: Optional[int] = None
+
+
+class JobRead(BaseModel):
+    """A discovery job with progress + per-task results."""
+
+    id: int
+    keyword: str
+    status: str
+    total: int = 0
+    processed: int = 0
+    success: int = 0
+    failed: int = 0
+    skipped: int = 0
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    tasks: List[JobTaskRead] = []
+
+
+def _job_to_read(job) -> JobRead:
+    progress = discovery_queue.job_progress(job)
+    return JobRead(
+        id=job.id,
+        keyword=job.keyword,
+        status=job.status,
+        total=progress["total"],
+        processed=progress["processed"],
+        success=progress["success"],
+        failed=progress["failed"],
+        skipped=progress["skipped"],
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+        tasks=[
+            JobTaskRead(
+                id=t.id,
+                url=t.url,
+                status=t.status,
+                discovery_id=t.discovery_id,
+                error_message=t.error_message,
+                company_name=(
+                    t.discovery.company_name if t.discovery is not None else None
+                ),
+                lead_score=t.discovery.lead_score if t.discovery is not None else None,
+                confidence_score=(
+                    t.discovery.confidence_score if t.discovery is not None else None
+                ),
+            )
+            for t in job.tasks
+        ],
+    )
 
 
 class DiscoveryRead(BaseModel):
@@ -200,3 +269,52 @@ def add_discovery_to_crm(discovery_id: int, db: Session = Depends(get_db)):
     )
     discovery_crud.link_to_lead(db, row, lead.id)
     return lead
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Stage 2: Batch discovery jobs
+# ---------------------------------------------------------------------------
+@router.post("/jobs", response_model=dict, status_code=201)
+def create_discovery_job(payload: CreateJobRequest, db: Session = Depends(get_db)):
+    """Create a pending batch discovery job for a search keyword.
+
+    Returns the ``job_id``; call ``POST /discovery/jobs/{id}/run`` to resolve
+    candidate URLs from the keyword, analyse them, and track progress.
+    """
+    keyword = (payload.keyword or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=422, detail="keyword is required")
+    job = discovery_queue.create_job(db, keyword)
+    return {"job_id": job.id, "status": job.status}
+
+
+@router.get("/jobs/{job_id}", response_model=JobRead)
+def get_discovery_job(job_id: int, db: Session = Depends(get_db)):
+    """Return a discovery job with progress + per-task results.
+
+    Progress: ``total`` / ``processed`` / ``success`` (analyzed) / ``failed`` /
+    ``skipped`` (duplicates). Tasks carry the linked discovery's company name
+    and lead score so the dashboard can bulk-add them to the CRM.
+    """
+    job = discovery_queue.get_job(db, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Discovery job not found")
+    return _job_to_read(job)
+
+
+@router.post("/jobs/{job_id}/run", response_model=JobRead)
+def run_discovery_job(job_id: int, db: Session = Depends(get_db)):
+    """Execute a discovery job: resolve URLs, analyse each, track progress.
+
+    Reuses the Stage 1 website analyzer (extraction + scoring) and duplicate
+    detection (URLs already known to the CRM or prior discoveries are
+    skipped). Existing outreach workflow is untouched.
+    """
+    job = discovery_queue.get_job(db, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Discovery job not found")
+    if job.status == "running":
+        raise HTTPException(status_code=409, detail="Discovery job is already running")
+    discovery_queue.run_job(db, job)
+    db.refresh(job)
+    return _job_to_read(job)

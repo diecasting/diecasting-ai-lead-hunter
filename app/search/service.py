@@ -49,6 +49,26 @@ class SearchService:
     def __init__(self, provider: Optional[BaseSearchProvider] = None):
         self.provider = provider or GoogleProvider()
 
+    def search_urls(
+        self, keyword: str, country: str = "us", max_results: int = 50
+    ) -> List[str]:
+        """Raw candidate homepage URLs for a keyword — no persistence.
+
+        Used by the Phase 5 Stage 2 batch discovery queue to resolve prospect
+        sites before the website-analysis pipeline runs. Results are filtered
+        (directories excluded) and deduplicated to homepage URLs.
+        """
+        raw = self.provider.search(keyword, country=country, max_results=max_results)
+        filtered = filter_results(raw)
+        urls: List[str] = []
+        seen: set = set()
+        for r in filtered:
+            home = _homepage(r.url)
+            if home and home not in seen:
+                seen.add(home)
+                urls.append(home)
+        return urls
+
     def run_search(
         self,
         db: Session,

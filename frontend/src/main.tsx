@@ -7,6 +7,7 @@ import LeadDetailPage from "./pages/LeadDetailPage";
 import DraftsPage from "./pages/DraftsPage";
 import QualityPage from "./pages/QualityPage";
 import DiscoveryPage from "./pages/DiscoveryPage";
+import DiscoveryJobsPage from "./pages/DiscoveryJobsPage";
 import "./index.css";
 
 const router = createHashRouter([
@@ -20,6 +21,7 @@ const router = createHashRouter([
       { path: "drafts", element: <DraftsPage /> },
       { path: "quality", element: <QualityPage /> },
       { path: "discovery", element: <DiscoveryPage /> },
+      { path: "discovery/jobs", element: <DiscoveryJobsPage /> },
     ],
   },
 ]);

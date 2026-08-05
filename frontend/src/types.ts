@@ -117,6 +117,36 @@ export interface DiscoveryResult {
   created_at?: string | null;
 }
 
+export interface DiscoveryJobTask {
+  id: number;
+  url: string;
+  status: "pending" | "analyzed" | "failed" | "skipped";
+  discovery_id?: number | null;
+  error_message?: string | null;
+  company_name?: string | null;
+  lead_score?: number | null;
+  confidence_score?: number | null;
+}
+
+export interface DiscoveryJob {
+  id: number;
+  keyword: string;
+  status: "pending" | "running" | "completed" | "failed";
+  total: number;
+  processed: number;
+  success: number;
+  failed: number;
+  skipped: number;
+  created_at?: string | null;
+  completed_at?: string | null;
+  tasks: DiscoveryJobTask[];
+}
+
+export interface CreateJobResponse {
+  job_id: number;
+  status: string;
+}
+
 export interface RankingResponse {
   count: number;
   filters: { min_score: number; priority: string | null };
