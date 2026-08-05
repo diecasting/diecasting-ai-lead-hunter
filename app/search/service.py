@@ -98,6 +98,7 @@ class SearchService:
                 country=country.upper() if country else None,
                 industry="Die casting",
                 source="google_search",
+                lead_source="search",
                 crawl_status="pending",
             )
             # 3. create a crawl task for the new lead

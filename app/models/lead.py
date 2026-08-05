@@ -35,6 +35,11 @@ class CompanyLead(Base):
     website = Column(String(512), nullable=True, unique=True, index=True)
     domain = Column(String(255), nullable=True, index=True)
     source = Column(String(120), nullable=True)
+    # Phase 4 Stage 3.5: how this lead entered the system (import | manual |
+    # search | ...). The database default is "import".
+    lead_source = Column(
+        String(50), nullable=False, default="import", server_default="import", index=True
+    )
 
     # --- Firmographics -----------------------------------------------------
     country = Column(String(120), nullable=True)
@@ -46,6 +51,7 @@ class CompanyLead(Base):
     # --- Contact -----------------------------------------------------------
     contact_email = Column(String(255), nullable=True)
     contact_phone = Column(String(120), nullable=True)
+    contact_name = Column(String(255), nullable=True)  # Phase 4 Stage 3.5
 
     # --- AI enrichment -----------------------------------------------------
     ai_score = Column(Float, nullable=True)            # 0-100 fit score

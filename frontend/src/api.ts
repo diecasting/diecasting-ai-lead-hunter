@@ -3,7 +3,8 @@
 // VITE_API_BASE to override (e.g. a deployed backend URL) at build time.
 import type {
   CompanyLead,
-  LeadImportResult,
+  LeadImportPreview,
+  LeadImportSummary,
   OutreachMessage,
   RankingResponse,
 } from "./types";
@@ -68,7 +69,26 @@ export const api = {
 
   deleteLead: (id: number) => request<void>("DELETE", `/leads/${id}`),
 
-  importLeads: async (file: File): Promise<LeadImportResult> => {
+  // Dry-run an import file: returns per-row outcomes without writing anything.
+  previewLeads: async (file: File): Promise<LeadImportPreview> => {
+    const url = new URL(`${BASE}/leads/import/preview`, window.location.origin);
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(url.toString(), { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const err = await res.json();
+        detail = err.detail ?? detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(`Preview failed (${res.status}): ${detail}`);
+    }
+    return (await res.json()) as LeadImportPreview;
+  },
+
+  importLeads: async (file: File): Promise<LeadImportSummary> => {
     const url = new URL(`${BASE}/leads/import`, window.location.origin);
     const form = new FormData();
     form.append("file", file);
@@ -83,7 +103,7 @@ export const api = {
       }
       throw new Error(`Import failed (${res.status}): ${detail}`);
     }
-    return (await res.json()) as LeadImportResult;
+    return (await res.json()) as LeadImportSummary;
   },
 
   analyzeLead: (id: number) =>

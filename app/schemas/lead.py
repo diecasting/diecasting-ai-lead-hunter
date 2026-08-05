@@ -16,6 +16,7 @@ class CompanyLeadBase(BaseModel):
     employee_count: Optional[int] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
+    contact_name: Optional[str] = None
     source: Optional[str] = None
     lead_status: Optional[str] = "new"
     sales_priority: Optional[str] = None
@@ -50,6 +51,7 @@ class CompanyLeadUpdate(BaseModel):
     employee_count: Optional[int] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
+    contact_name: Optional[str] = None
     source: Optional[str] = None
     lead_status: Optional[str] = None
     sales_priority: Optional[str] = None
@@ -67,6 +69,7 @@ class CompanyLeadRead(CompanyLeadBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    lead_source: str = "import"
     crawl_status: str = "pending"
     contact_emails: Optional[list] = None
     pages_crawled: int = 0

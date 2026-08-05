@@ -78,7 +78,7 @@ export default function LeadsPage() {
           <option value="LOW">LOW</option>
         </select>
         <button onClick={() => setShowForm(true)}>+ New Lead</button>
-        <button onClick={() => setShowImport(true)}>⤓ Import CSV</button>
+        <button onClick={() => setShowImport(true)}>⤓ Import Leads</button>
         <button className="secondary" onClick={load}>
           Refresh
         </button>
@@ -95,6 +95,7 @@ export default function LeadsPage() {
               <th>Company</th>
               <th>Industry</th>
               <th>Country</th>
+              <th>Source</th>
               <th>Priority</th>
               <th>Lead Score</th>
               <th>Sales Priority</th>
@@ -116,6 +117,11 @@ export default function LeadsPage() {
                 </td>
                 <td>{l.industry ?? "—"}</td>
                 <td>{l.country ?? "—"}</td>
+                <td>
+                  <span className={`badge badge-source badge-${l.lead_source ?? "import"}`}>
+                    {l.lead_source ?? "import"}
+                  </span>
+                </td>
                 <td>
                   <span
                     className="badge"
@@ -156,7 +162,7 @@ export default function LeadsPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="muted">
+                <td colSpan={10} className="muted">
                   No leads match.
                 </td>
               </tr>

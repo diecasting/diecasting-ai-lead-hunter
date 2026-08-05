@@ -12,7 +12,9 @@ export interface CompanyLead {
   employee_count?: number | null;
   contact_email?: string | null;
   contact_phone?: string | null;
+  contact_name?: string | null;
   source?: string | null;
+  lead_source?: string;
   lead_status: string;
   sales_priority?: string | null;
   business_type?: string | null;
@@ -80,10 +82,26 @@ export interface ImportRowError {
   reason: string;
 }
 
-export interface LeadImportResult {
-  total: number;
-  imported: number;
-  skipped: number;
-  failed: number;
-  errors: ImportRowError[];
+export interface LeadImportSummary {
+  total_rows: number;
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  error_details: ImportRowError[];
+}
+
+export interface ImportPreviewRow {
+  row: number;
+  company?: string | null;
+  website?: string | null;
+  status: "valid" | "duplicate" | "failed";
+  reason?: string | null;
+}
+
+export interface LeadImportPreview {
+  total_rows: number;
+  valid_count: number;
+  duplicate_count: number;
+  failed_count: number;
+  rows: ImportPreviewRow[];
 }
