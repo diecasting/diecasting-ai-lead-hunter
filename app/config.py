@@ -28,9 +28,13 @@ class Settings(BaseSettings):
     crawler_max_retries: int = 3
     crawler_request_timeout: int = 30000  # ms
 
-    # Search (Google SERP)
+    # Search (Phase 5 Stage 4: provider selection)
+    # SEARCH_PROVIDER: google (default, Playwright SERP scraping fallback) |
+    #                  serpapi (production API; requires SERPAPI_KEY)
     search_country_default: str = "us"
     search_max_results_default: int = 20
+    search_provider: str = "google"
+    serpapi_key: str = ""
     keywords_file: str = "data/keywords.txt"
 
     # Export

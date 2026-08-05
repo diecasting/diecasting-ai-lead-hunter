@@ -167,7 +167,13 @@ def test_smtp_auth_failure_handled(monkeypatch):
 # ---------------------------------------------------------------------------
 # Mock fallback + provider factory
 # ---------------------------------------------------------------------------
-def test_get_email_sender_mock_fallback():
+def test_get_email_sender_mock_fallback(monkeypatch):
+    from app import config as config_mod
+
+    # Hermetic: clear any real SMTP credentials from a local .env.
+    monkeypatch.setattr(config_mod.settings, "smtp_host", "")
+    monkeypatch.setattr(config_mod.settings, "smtp_username", "")
+    monkeypatch.setattr(config_mod.settings, "smtp_password", "")
     assert isinstance(get_email_sender(), MockEmailSender)
 
 

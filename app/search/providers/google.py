@@ -10,7 +10,7 @@ from typing import List, Optional
 from playwright.sync_api import sync_playwright
 
 from app.config import settings
-from app.search.base import BaseSearchProvider, SearchResult
+from app.search.providers.base import BaseSearchProvider, SearchResult
 
 # Google country -> hl (host language) mapping (subset; default falls back to en)
 _COUNTRY_HL = {

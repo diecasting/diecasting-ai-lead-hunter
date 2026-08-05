@@ -37,9 +37,37 @@ def client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+
+    # Force provider-based features into hermetic (dry-run) mode regardless of
+    # any real credentials present in a local .env: SMTP -> mock sender, IMAP
+    # -> mock inbox, search -> google fallback. The live server process reads
+    # .env directly and is unaffected.
+    import app.config as config_mod
+
+    cfg = config_mod.settings
+    _saved = {
+        k: getattr(cfg, k)
+        for k in (
+            "smtp_host", "smtp_username", "smtp_password", "smtp_from_email",
+            "imap_host", "imap_username", "imap_password",
+            "search_provider", "serpapi_key",
+        )
+    }
+    cfg.smtp_host = ""
+    cfg.smtp_username = ""
+    cfg.smtp_password = ""
+    cfg.smtp_from_email = ""
+    cfg.imap_host = ""
+    cfg.imap_username = ""
+    cfg.imap_password = ""
+    cfg.search_provider = "google"
+    cfg.serpapi_key = ""
+
     with TestClient(app) as c:
         yield c
 
+    for k, v in _saved.items():
+        setattr(cfg, k, v)
     app.dependency_overrides.clear()
     db_mod.engine = orig_engine
     db_mod.SessionLocal = orig_session_local

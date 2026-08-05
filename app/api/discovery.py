@@ -64,6 +64,7 @@ class JobRead(BaseModel):
     success: int = 0
     failed: int = 0
     skipped: int = 0
+    error: Optional[str] = None
     created_at: Optional[str] = None
     completed_at: Optional[str] = None
     tasks: List[JobTaskRead] = []
@@ -278,15 +279,22 @@ def run_discovery_job(job_id: int, db: Session = Depends(get_db)):
     Reuses the Stage 1 website analyzer (extraction + scoring) and duplicate
     detection (URLs already known to the CRM or prior discoveries are
     skipped). Existing outreach workflow is untouched.
+
+    When the search provider is unavailable (e.g. ``SEARCH_PROVIDER=serpapi``
+    without a key) the job fails with a clear ``error`` instead of silently
+    returning zero URLs.
     """
     job = discovery_queue.get_job(db, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Discovery job not found")
     if job.status == "running":
         raise HTTPException(status_code=409, detail="Discovery job is already running")
-    discovery_queue.run_job(db, job)
+    result = discovery_queue.run_job(db, job)
     db.refresh(job)
-    return _job_to_read(job)
+    read = _job_to_read(job)
+    if result.get("error"):
+        read = read.model_copy(update={"error": result["error"]})
+    return read
 
 
 # ---------------------------------------------------------------------------

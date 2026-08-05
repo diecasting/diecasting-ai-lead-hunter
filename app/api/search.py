@@ -49,3 +49,22 @@ def list_results(
     limit: int = Query(200, ge=1, le=1000),
 ):
     return crud.get_multi(db, keyword=keyword, country=country, skip=skip, limit=limit)
+
+
+@router.get("/status", response_model=dict)
+def search_status():
+    """Return the active search provider configuration (no secrets).
+
+    ``provider`` is ``serpapi`` when ``SEARCH_PROVIDER=serpapi`` (configured
+    only when ``SERPAPI_KEY`` is present), otherwise the Google fallback.
+    """
+    from app.config import settings
+
+    name = (settings.search_provider or "google").strip().lower()
+    provider = "serpapi" if name == "serpapi" else "google"
+    configured = bool(settings.serpapi_key) if provider == "serpapi" else True
+    return {
+        "provider": provider,
+        "configured": configured,
+        "serpapi_key_set": bool(settings.serpapi_key),
+    }

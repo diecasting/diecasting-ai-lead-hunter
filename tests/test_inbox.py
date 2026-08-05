@@ -252,6 +252,11 @@ def test_mock_connector_fetch_and_mark():
 def test_get_inbox_connector_factory(monkeypatch):
     from app import config as config_mod
 
+    # Hermetic: clear any real IMAP credentials from a local .env.
+    monkeypatch.setattr(config_mod.settings, "imap_host", "")
+    monkeypatch.setattr(config_mod.settings, "imap_username", "")
+    monkeypatch.setattr(config_mod.settings, "imap_password", "")
+
     _reset_mock()
     assert isinstance(get_inbox_connector(), MockInboxConnector)  # unconfigured
     monkeypatch.setattr(config_mod.settings, "imap_host", "imap.example.com")

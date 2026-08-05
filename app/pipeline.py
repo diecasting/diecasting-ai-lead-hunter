@@ -19,7 +19,7 @@ from app.config import settings
 from app.crawler.website_crawler import WebsiteCrawler
 from app.crawler.runner import process_pending
 from app.crud import leads as leads_crud
-from app.search.google import GoogleProvider
+from app.search.providers import GoogleProvider
 from app.search.keywords import load_keywords
 from app.search.service import SearchService
 

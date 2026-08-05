@@ -35,6 +35,12 @@ def _configure_imap(monkeypatch, *, password="secret"):
 # Provider selection + SSL connection
 # ---------------------------------------------------------------------------
 def test_imap_provider_selection(monkeypatch):
+    from app import config as config_mod
+
+    # Hermetic: clear any real IMAP credentials from a local .env.
+    monkeypatch.setattr(config_mod.settings, "imap_host", "")
+    monkeypatch.setattr(config_mod.settings, "imap_username", "")
+    monkeypatch.setattr(config_mod.settings, "imap_password", "")
     assert isinstance(get_inbox_connector(), MockInboxConnector)  # unconfigured
     assert imap_configured() is False
 

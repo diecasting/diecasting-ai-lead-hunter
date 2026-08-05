@@ -16,8 +16,17 @@ class SearchResult:
     rank: int = 0
 
 
+class SearchProviderError(RuntimeError):
+    """Raised when the configured search provider cannot run.
+
+    Used e.g. when ``SEARCH_PROVIDER=serpapi`` is set without a ``SERPAPI_KEY``
+    — the discovery queue surfaces this as a clear job error instead of
+    silently returning zero URLs.
+    """
+
+
 class BaseSearchProvider(ABC):
-    """Interface implemented by concrete SERP providers (Google, Bing, ...)."""
+    """Interface implemented by concrete SERP providers (Google, SerpAPI, ...)."""
 
     @abstractmethod
     def search(

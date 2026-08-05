@@ -11,7 +11,7 @@ Two responsibilities:
 from typing import List
 from urllib.parse import urlparse
 
-from app.search.base import SearchResult
+from app.search.providers.base import SearchResult
 
 # --- Hard-exclude domains (substring match on the registered domain) ---------
 EXCLUDE_DOMAINS = {

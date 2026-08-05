@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.crud import ai_analysis as ai_analysis_crud
 from app.crud import crawl_tasks as crawl_tasks_crud
 from app.crud import leads as leads_crud
@@ -20,9 +21,28 @@ from app.crud import search_results as search_results_crud
 from app.models.crawl_task import CrawlTask
 from app.models.lead import CompanyLead
 from app.models.search_result import SearchResult
-from app.search.base import BaseSearchProvider, SearchResult as SearchResultData
 from app.search.filters import filter_results
-from app.search.google import GoogleProvider
+from app.search.providers.base import (
+    BaseSearchProvider,
+    SearchProviderError,
+    SearchResult as SearchResultData,
+)
+from app.search.providers.google import GoogleProvider
+from app.search.providers.serpapi import SerpAPIProvider
+
+
+def default_provider() -> BaseSearchProvider:
+    """Pick the search provider from ``SEARCH_PROVIDER`` (Phase 5 Stage 4).
+
+    * ``serpapi`` → :class:`SerpAPIProvider` (requires ``SERPAPI_KEY``; a
+      missing key raises :class:`SearchProviderError` at search time so the
+      discovery queue fails loudly instead of returning zero URLs).
+    * anything else (default) → the Google Playwright fallback.
+    """
+    name = (settings.search_provider or "google").strip().lower()
+    if name == "serpapi":
+        return SerpAPIProvider(api_key=settings.serpapi_key)
+    return GoogleProvider()
 
 
 def _homepage(url: str) -> str:
@@ -47,7 +67,7 @@ def _domain(url: str) -> Optional[str]:
 
 class SearchService:
     def __init__(self, provider: Optional[BaseSearchProvider] = None):
-        self.provider = provider or GoogleProvider()
+        self.provider = provider or default_provider()
 
     def search_urls(
         self, keyword: str, country: str = "us", max_results: int = 50
