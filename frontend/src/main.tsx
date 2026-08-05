@@ -10,6 +10,7 @@ import DiscoveryPage from "./pages/DiscoveryPage";
 import DiscoveryJobsPage from "./pages/DiscoveryJobsPage";
 import DiscoveryAutomationPage from "./pages/DiscoveryAutomationPage";
 import FollowupAutomationPage from "./pages/FollowupAutomationPage";
+import InboxPage from "./pages/InboxPage";
 import "./index.css";
 
 const router = createHashRouter([
@@ -26,6 +27,7 @@ const router = createHashRouter([
       { path: "discovery/jobs", element: <DiscoveryJobsPage /> },
       { path: "discovery/automation", element: <DiscoveryAutomationPage /> },
       { path: "followups", element: <FollowupAutomationPage /> },
+      { path: "inbox", element: <InboxPage /> },
     ],
   },
 ]);

@@ -14,6 +14,7 @@ from app.models.discovery_schedule import DiscoverySchedule
 from app.models.email_verification import EmailVerification
 from app.models.email_tracking import EmailTracking
 from app.models.followup import FollowUpSequence, OutreachFollowUp
+from app.models.incoming_email import IncomingEmail
 from app.models.lead import CompanyLead
 from app.models.lead_source import LeadSource
 from app.models.outreach_event import OutreachEvent
@@ -31,6 +32,7 @@ __all__ = [
     "DiscoverySchedule",
     "FollowUpSequence",
     "OutreachFollowUp",
+    "IncomingEmail",
     "SearchResult",
     "CrawlTask",
     "AIAnalysis",

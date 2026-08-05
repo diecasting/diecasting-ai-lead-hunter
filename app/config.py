@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
 
+    # IMAP (Phase 6 Stage 3 reply inbox connector) — leave blank to run the
+    # in-memory mock connector (dry-run, used by tests and local dev).
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_username: str = ""
+    imap_password: str = ""
+    imap_use_ssl: bool = True
+    imap_folder: str = "INBOX"
+
     @model_validator(mode="after")
     def _sync_smtp_credentials(self):
         if self.smtp_username and not self.smtp_user:

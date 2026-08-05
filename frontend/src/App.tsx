@@ -23,6 +23,9 @@ export default function App() {
         <NavLink to="/followups" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           Follow-up Automation
         </NavLink>
+        <NavLink to="/inbox" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
+          Reply Inbox
+        </NavLink>
         <NavLink to="/quality" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           Quality & Ranking
         </NavLink>

@@ -193,6 +193,33 @@ export interface OutreachFollowUp {
   created_at?: string | null;
 }
 
+export interface IncomingEmail {
+  id: number;
+  sender_email: string;
+  sender_name?: string | null;
+  subject?: string | null;
+  body?: string | null;
+  received_at?: string | null;
+  processed: boolean;
+  matched_lead_id?: number | null;
+  matched_lead_name?: string | null;
+  message_id?: number | null;
+  analysis_id?: number | null;
+  intent?: string | null;
+  confidence_score?: number | null;
+  recommended_action?: string | null;
+}
+
+export interface InboxProcessSummary {
+  fetched: number;
+  new_emails: number;
+  duplicates: number;
+  processed: number;
+  matched: number;
+  unmatched: number;
+  analyzed: number;
+}
+
 export interface RankingResponse {
   count: number;
   filters: { min_score: number; priority: string | null };

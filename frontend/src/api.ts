@@ -8,6 +8,8 @@ import type {
   DiscoveryResult,
   DiscoverySchedule,
   FollowUpSequence,
+  IncomingEmail,
+  InboxProcessSummary,
   LeadImportPreview,
   LeadImportSummary,
   LeadTimeline,
@@ -262,4 +264,16 @@ export const api = {
 
   listReplyAnalyses: (leadId: number) =>
     request<ReplyAnalysis[]>("GET", `/outreach/leads/${leadId}/reply-analysis`),
+
+  // ---- Reply inbox (Phase 6 Stage 3) -------------------------------------
+  listInbox: (params?: { processed?: string }) =>
+    request<IncomingEmail[]>("GET", "/outreach/inbox", undefined, {
+      processed: params?.processed,
+    }),
+
+  processInbox: () =>
+    request<InboxProcessSummary>("POST", "/outreach/inbox/process"),
+
+  listUnprocessedInbox: () =>
+    request<IncomingEmail[]>("GET", "/outreach/inbox/unprocessed"),
 };

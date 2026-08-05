@@ -469,3 +469,98 @@ def list_reply_analyses(
         raise HTTPException(status_code=404, detail="Lead not found")
     rows = reply_ai.list_analyses(db, lead_id)
     return [_reply_analysis_to_read(a) for a in rows]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 Stage 3: Reply Inbox Connector
+# ---------------------------------------------------------------------------
+class IncomingEmailRead(BaseModel):
+    """An inbound inbox email with its analysis outcome."""
+
+    id: int
+    sender_email: str
+    sender_name: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    received_at: Optional[datetime] = None
+    processed: bool = False
+    matched_lead_id: Optional[int] = None
+    matched_lead_name: Optional[str] = None
+    message_id: Optional[int] = None
+    analysis_id: Optional[int] = None
+    intent: Optional[str] = None
+    confidence_score: Optional[float] = None
+    recommended_action: Optional[str] = None
+
+
+def _incoming_to_read(row) -> IncomingEmailRead:
+    analysis = row.analysis if row.analysis_id is not None else None
+    return IncomingEmailRead(
+        id=row.id,
+        sender_email=row.sender_email,
+        sender_name=row.sender_name,
+        subject=row.subject,
+        body=row.body,
+        received_at=row.received_at,
+        processed=row.processed,
+        matched_lead_id=row.matched_lead_id,
+        matched_lead_name=row.lead.name if row.lead is not None else None,
+        message_id=row.message_id,
+        analysis_id=row.analysis_id,
+        intent=analysis.intent if analysis is not None else None,
+        confidence_score=analysis.confidence_score if analysis is not None else None,
+        recommended_action=(
+            analysis.recommended_action if analysis is not None else None
+        ),
+    )
+
+
+@router.get("/inbox", response_model=List[IncomingEmailRead])
+def list_inbox(
+    db: Session = Depends(get_db),
+    processed: Optional[str] = Query(
+        None,
+        pattern="^(true|false)$",
+        description="Filter by processed state: true | false",
+    ),
+):
+    """Return inbox emails (newest first), optionally filtered by state."""
+    from app.models.incoming_email import IncomingEmail
+
+    q = db.query(IncomingEmail)
+    if processed is not None:
+        q = q.filter(IncomingEmail.processed.is_(processed == "true"))
+    rows = (
+        q.order_by(IncomingEmail.received_at.desc(), IncomingEmail.id.desc())
+        .limit(200)
+        .all()
+    )
+    return [_incoming_to_read(r) for r in rows]
+
+
+@router.post("/inbox/process", response_model=dict)
+def process_inbox_now(db: Session = Depends(get_db)):
+    """Fetch new replies from the inbox and feed them into the Reply
+    Intelligence Engine (match lead → classify → apply CRM actions).
+
+    Returns a summary: fetched / new_emails / duplicates / processed /
+    matched / unmatched / analyzed. Unmatched emails stay unprocessed so they
+    remain visible in GET /outreach/inbox/unprocessed for manual review.
+    """
+    from app.outreach.inbox.processor import process_inbox
+
+    return process_inbox(db)
+
+
+@router.get("/inbox/unprocessed", response_model=List[IncomingEmailRead])
+def list_unprocessed_inbox(db: Session = Depends(get_db)):
+    """Return inbox emails that have not been processed yet (incl. unmatched)."""
+    from app.models.incoming_email import IncomingEmail
+
+    rows = (
+        db.query(IncomingEmail)
+        .filter(IncomingEmail.processed.is_(False))
+        .order_by(IncomingEmail.received_at.desc(), IncomingEmail.id.desc())
+        .all()
+    )
+    return [_incoming_to_read(r) for r in rows]
