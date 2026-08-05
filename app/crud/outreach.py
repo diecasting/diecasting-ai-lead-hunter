@@ -79,6 +79,23 @@ def set_gate_status(
     return obj
 
 
+def set_send_status(
+    db: Session,
+    obj: OutreachMessage,
+    send_status: str,
+    *,
+    sent_at: Optional[datetime] = None,
+) -> OutreachMessage:
+    """Advance the sending pipeline state (draft | queued | sent | failed)."""
+    obj.send_status = send_status
+    if sent_at is not None:
+        obj.sent_at = sent_at
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
 def list_sent(db: Session, *, lead_id: Optional[int] = None) -> List[OutreachMessage]:
     q = db.query(OutreachMessage).filter(OutreachMessage.status == "sent")
     if lead_id is not None:
@@ -106,6 +123,8 @@ def mark_sent(
 ) -> OutreachMessage:
     obj.status = "sent"
     obj.sent_time = sent_time or datetime.now(timezone.utc)
+    obj.sent_at = obj.sent_time
+    obj.send_status = "sent"
     obj.sender = sender
     obj.recipient = recipient
     db.add(obj)

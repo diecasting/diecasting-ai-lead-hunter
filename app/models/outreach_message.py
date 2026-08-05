@@ -55,6 +55,12 @@ class OutreachMessage(Base):
     recipient_name = Column(String(255), nullable=True)
     recipient_email = Column(String(255), nullable=True)
 
+    # Phase 4 Stage 5: email sending pipeline state.
+    send_status = Column(
+        String(20), nullable=False, default="draft", server_default="draft", index=True
+    )  # draft | queued | sent | failed
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     lead = relationship("CompanyLead", backref="outreach_messages", lazy="selectin")

@@ -29,6 +29,8 @@ class OutreachMessageRead(BaseModel):
     quality_gate_status: Optional[str] = None
     recipient_name: Optional[str] = None
     recipient_email: Optional[str] = None
+    send_status: str = "draft"
+    sent_at: Optional[datetime] = None
     created_at: datetime
 
 
@@ -51,3 +53,13 @@ class ReviewGateRequest(BaseModel):
         if v not in ("ready", "review", "blocked"):
             raise ValueError("gate_status must be one of: ready, review, blocked")
         return v
+
+
+class SendDraftResponse(BaseModel):
+    """Result of a send attempt on an outreach draft."""
+
+    success: bool
+    message_id: int
+    sent_at: Optional[datetime] = None
+    send_status: str = "draft"
+    error: Optional[str] = None

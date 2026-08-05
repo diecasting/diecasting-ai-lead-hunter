@@ -23,6 +23,13 @@ const GATE_LABELS: Record<string, string> = {
   blocked: "Blocked",
 };
 
+const SEND_COLORS: Record<string, string> = {
+  draft: "#6b7280",
+  queued: "#2563eb",
+  sent: "#16a34a",
+  failed: "#dc2626",
+};
+
 type GateFilter = "all" | "ready" | "review" | "blocked";
 
 const GATE_FILTERS: { key: GateFilter; label: string }[] = [
@@ -40,6 +47,7 @@ export default function DraftsPage() {
   const [selected, setSelected] = useState<OutreachMessage | null>(null);
   const [gateFilter, setGateFilter] = useState<GateFilter>("all");
   const [releasing, setReleasing] = useState<number | null>(null);
+  const [sending, setSending] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,6 +79,25 @@ export default function DraftsPage() {
         setError((e as Error).message);
       } finally {
         setReleasing(null);
+      }
+    },
+    [load],
+  );
+
+  const send = useCallback(
+    async (d: OutreachMessage) => {
+      setSending(d.id);
+      setError(null);
+      try {
+        const res = await api.sendDraft(d.id);
+        if (!res.success) {
+          setError(`Send failed: ${res.error ?? "unknown delivery error"}`);
+        }
+        await load();
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setSending(null);
       }
     },
     [load],
@@ -120,6 +147,7 @@ export default function DraftsPage() {
               <th>Status</th>
               <th>Quality</th>
               <th>Gate</th>
+              <th>Send</th>
               <th>Created</th>
               <th></th>
             </tr>
@@ -186,21 +214,59 @@ export default function DraftsPage() {
                     </span>
                   )}
                 </td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      className="badge"
+                      style={{
+                        background: SEND_COLORS[d.send_status ?? "draft"] ?? "#6b7280",
+                      }}
+                      title={
+                        d.sent_at
+                          ? `Sent at ${formatDate(d.sent_at)}`
+                          : `Sending pipeline: ${d.send_status ?? "draft"}`
+                      }
+                    >
+                      {d.send_status ?? "draft"}
+                    </span>
+                  </div>
+                </td>
                 <td>{formatDate(d.created_at)}</td>
                 <td>
-                  {d.quality_gate_status && d.quality_gate_status !== "ready" ? (
+                  <div className="row-actions">
+                    {d.status === "draft" &&
+                    d.quality_gate_status !== "ready" &&
+                    d.quality_gate_status ? (
+                      <button
+                        className="secondary"
+                        disabled={releasing === d.id}
+                        onClick={() => release(d.id)}
+                      >
+                        {releasing === d.id ? "Releasing…" : "Release"}
+                      </button>
+                    ) : null}
                     <button
                       className="secondary"
-                      disabled={releasing === d.id}
-                      onClick={() => release(d.id)}
+                      disabled={
+                        d.quality_gate_status !== "ready" ||
+                        d.status !== "draft" ||
+                        sending === d.id ||
+                        d.send_status === "sent" ||
+                        d.send_status === "queued"
+                      }
+                      title={
+                        d.quality_gate_status === "ready"
+                          ? "Send this approved draft"
+                          : "Only ready drafts can be sent — release it first"
+                      }
+                      onClick={() => send(d)}
                     >
-                      {releasing === d.id ? "Releasing…" : "Release"}
+                      {sending === d.id ? "Sending…" : "Send"}
                     </button>
-                  ) : (
                     <button className="secondary" onClick={() => setSelected(d)}>
                       Review
                     </button>
-                  )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -216,7 +282,9 @@ export default function DraftsPage() {
               Draft #{selected.id} · lead #{selected.lead_id} · role:{" "}
               {selected.contact_role ?? "—"} · quality:{" "}
               {selected.quality_score != null ? `${selected.quality_score}/100` : "—"} ·{" "}
-              gate: {selected.quality_gate_status ?? "unscored"} ·{" "}
+              gate: {selected.quality_gate_status ?? "unscored"} · send:{" "}
+              {selected.send_status ?? "draft"}
+              {selected.sent_at ? ` · sent ${formatDate(selected.sent_at)}` : ""} ·{" "}
               {formatDate(selected.created_at)}
             </div>
             <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>

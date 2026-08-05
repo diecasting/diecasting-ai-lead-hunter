@@ -7,6 +7,7 @@ import type {
   LeadImportSummary,
   OutreachMessage,
   RankingResponse,
+  SendDraftResponse,
 } from "./types";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "/api";
@@ -139,6 +140,10 @@ export const api = {
     request<OutreachMessage>("PATCH", `/outreach/drafts/${messageId}/gate`, {
       gate_status: gateStatus,
     }),
+
+  // Send an approved (gate=ready) draft through the sending pipeline.
+  sendDraft: (messageId: number) =>
+    request<SendDraftResponse>("POST", `/outreach/drafts/${messageId}/send`),
 
   // ---- CRM / Quality ----------------------------------------------------
   ranking: (params?: { limit?: number; min_score?: number; priority?: string }) =>

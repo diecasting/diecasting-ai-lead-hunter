@@ -66,7 +66,17 @@ export interface OutreachMessage {
   quality_gate_status?: string | null;
   recipient_name?: string | null;
   recipient_email?: string | null;
+  send_status?: string;
+  sent_at?: string | null;
   created_at: string;
+}
+
+export interface SendDraftResponse {
+  success: boolean;
+  message_id: number;
+  sent_at?: string | null;
+  send_status: string;
+  error?: string | null;
 }
 
 export interface RankingResponse {

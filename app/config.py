@@ -1,4 +1,5 @@
 """Application settings loaded from environment / .env file."""
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,12 +42,24 @@ class Settings(BaseSettings):
     scheduler_minute: int = 0
     scheduler_max_results: int = 20
 
-    # SMTP (Phase 2.5 outreach sending)
+    # SMTP (Phase 2.5 / Phase 4 Stage 5 outreach sending)
+    # SMTP_USERNAME and SMTP_FROM_EMAIL are the canonical env names (Stage 5);
+    # SMTP_USER is kept for backward compatibility and synced with SMTP_USERNAME.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
+    smtp_username: str = ""
     smtp_password: str = ""
+    smtp_from_email: str = ""
     smtp_use_tls: bool = True
+
+    @model_validator(mode="after")
+    def _sync_smtp_credentials(self):
+        if self.smtp_username and not self.smtp_user:
+            self.smtp_user = self.smtp_username
+        if self.smtp_user and not self.smtp_username:
+            self.smtp_username = self.smtp_user
+        return self
 
     @property
     def sqlalchemy_database_uri(self) -> str:

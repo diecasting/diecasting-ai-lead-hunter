@@ -1,19 +1,33 @@
 """Email sending module — SMTP-based delivery with send tracking.
 
 Supports generic SMTP, Gmail SMTP, and enterprise mail servers. Configuration
-is read from ``app.config.settings`` (SMTP_HOST / SMTP_PORT / SMTP_USER /
-SMTP_PASSWORD / SMTP_USE_TLS). When no SMTP config is present the module runs
-in *dry-run* mode (no real email sent) which is convenient for tests and local
-development — it still records the send event so the pipeline can advance.
+is read from ``app.config.settings`` (SMTP_HOST / SMTP_PORT / SMTP_USERNAME /
+SMTP_PASSWORD / SMTP_FROM_EMAIL / SMTP_USE_TLS). When no SMTP config is present
+the module runs in *dry-run* mode (no real email sent) which is convenient for
+tests and local development — it still records the send event so the pipeline
+can advance.
 
-``send_email`` returns a delivery receipt dict:
+Two layers:
+
+* **Phase 4 Stage 5 abstraction** — :class:`EmailSender` interface
+  (``send_email`` / ``validate_recipient``) with two providers:
+  :class:`SmtpEmailSender` (real delivery, transport-injectable for tests) and
+  :class:`MockEmailSender` (in-memory recording used when SMTP is unconfigured
+  or for tests). ``get_email_sender()`` picks the right provider.
+
+* **Legacy helpers** — ``send_email`` / ``send_message_by_id`` return a
+  delivery receipt dict:
     {"success": bool, "sender": str, "recipient": str, "sent_at": str,
      "message_id": int|None, "dry_run": bool}
+  and are kept for backward compatibility with the Phase 2.5 pipeline.
 """
+import re
 import smtplib
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.message import EmailMessage
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -22,9 +36,156 @@ from app.crud import outreach as outreach_crud
 from app.crud import outreach_events as events_crud
 from app.models.outreach_message import OutreachMessage
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Stage 5: EmailSender abstraction + providers
+# ---------------------------------------------------------------------------
+@dataclass
+class SendReceipt:
+    """Outcome of a single ``EmailSender.send_email`` delivery attempt."""
+
+    success: bool
+    recipient: str
+    sender: str
+    sent_at: str = ""
+    message_id: Optional[int] = None
+    dry_run: bool = False
+    error: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "success": self.success,
+            "recipient": self.recipient,
+            "sender": self.sender,
+            "sent_at": self.sent_at,
+            "message_id": self.message_id,
+            "dry_run": self.dry_run,
+            "error": self.error,
+        }
+
+
+class EmailSender(ABC):
+    """Abstract email provider: validate the recipient, deliver the message."""
+
+    from_email: str = ""
+
+    def validate_recipient(self, email: str) -> Optional[str]:
+        """Return an error message when the recipient is invalid, else None.
+
+        A missing address and a malformed address both fail validation.
+        """
+        addr = (email or "").strip()
+        if not addr:
+            return "recipient_email is required"
+        if not _EMAIL_RE.match(addr):
+            return f"invalid recipient email: {addr!r}"
+        return None
+
+    @abstractmethod
+    def send_email(
+        self, *, subject: str, body: str, recipient: str, sender: Optional[str] = None
+    ) -> SendReceipt:
+        """Deliver one message and return a :class:`SendReceipt`."""
+
+
+class SmtpEmailSender(EmailSender):
+    """Real SMTP delivery configured from the ``SMTP_*`` environment variables.
+
+    ``transport`` is injectable for tests (any object exposing ``starttls()`` /
+    ``login()`` / ``send_message()``) so the network IO boundary stays fully
+    mock-replaceable.
+    """
+
+    def __init__(self, *, transport=None):
+        self.transport = transport
+        self.from_email = (
+            settings.smtp_from_email or settings.smtp_username or settings.smtp_user or ""
+        )
+
+    def send_email(
+        self, *, subject: str, body: str, recipient: str, sender: Optional[str] = None
+    ) -> SendReceipt:
+        sender_addr = sender or self.from_email or "noreply@diecasting-ai-lead-hunter.local"
+        sent_at = datetime.now(timezone.utc)
+        try:
+            email_msg = _build_message(subject, body, sender_addr, recipient)
+            if self.transport is not None:
+                # Injected transport — no real network connection.
+                _deliver_via_transport(self.transport, email_msg)
+            else:
+                with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                    if settings.smtp_use_tls:
+                        server.starttls()
+                    server.login(
+                        settings.smtp_username or settings.smtp_user,
+                        settings.smtp_password,
+                    )
+                    server.send_message(email_msg)
+        except Exception as exc:  # pragma: no cover - network/SMTP dependent
+            return SendReceipt(
+                success=False,
+                recipient=recipient,
+                sender=sender_addr,
+                sent_at=sent_at.isoformat(),
+                error=str(exc),
+            )
+        return SendReceipt(
+            success=True,
+            recipient=recipient,
+            sender=sender_addr,
+            sent_at=sent_at.isoformat(),
+        )
+
+
+class MockEmailSender(EmailSender):
+    """In-memory provider: records every send, never touches the network.
+
+    Used when SMTP is not configured (local dev / demo) and in tests. Set
+    ``fail_on`` to simulate an SMTP failure and exercise error handling.
+    """
+
+    def __init__(self):
+        self.sent: List[SendReceipt] = []
+        self.fail_on: Optional[str] = None
+        self.from_email = "noreply@mock.local"
+
+    def send_email(
+        self, *, subject: str, body: str, recipient: str, sender: Optional[str] = None
+    ) -> SendReceipt:
+        sent_at = datetime.now(timezone.utc)
+        sender_addr = sender or self.from_email
+        if self.fail_on:
+            return SendReceipt(
+                success=False,
+                recipient=recipient,
+                sender=sender_addr,
+                sent_at=sent_at.isoformat(),
+                dry_run=True,
+                error=self.fail_on,
+            )
+        receipt = SendReceipt(
+            success=True,
+            recipient=recipient,
+            sender=sender_addr,
+            sent_at=sent_at.isoformat(),
+            dry_run=True,
+        )
+        self.sent.append(receipt)
+        return receipt
+
+
+def get_email_sender(*, dry_run: Optional[bool] = None, transport=None) -> EmailSender:
+    """Pick a provider: real SMTP when configured (and not forced to dry-run),
+    otherwise the in-memory mock (records sends, reports success)."""
+    if dry_run is not False and not _smtp_configured():
+        return MockEmailSender()
+    return SmtpEmailSender(transport=transport)
+
 
 def _smtp_configured() -> bool:
-    return bool(settings.smtp_host and settings.smtp_user and settings.smtp_password)
+    return bool(settings.smtp_host and (settings.smtp_user or settings.smtp_username) and settings.smtp_password)
 
 
 def _build_message(subject: str, body: str, sender: str, recipient: str) -> EmailMessage:
@@ -143,7 +304,9 @@ def _deliver_via_transport(transport, email_msg: EmailMessage) -> None:
     if getattr(transport, "starttls", None) is not None and settings.smtp_use_tls:
         transport.starttls()
     if getattr(transport, "login", None) is not None:
-        transport.login(settings.smtp_user, settings.smtp_password)
+        transport.login(
+            settings.smtp_username or settings.smtp_user, settings.smtp_password
+        )
     transport.send_message(email_msg)
 
 
