@@ -36,8 +36,11 @@ export default function ImportLeadsModal({
   const [result, setResult] = useState<LeadImportSummary | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const reset = () => {
-    setFile(null);
+  // Clear the previous preview/result/error when a new file is chosen.
+  // NOTE: must NOT reset `file` here — onChange sets the file first and React
+  // batches these setState calls, so a setFile(null) last would wipe the
+  // just-selected file and keep the "Preview file" button disabled forever.
+  const clearResults = () => {
     setPreview(null);
     setResult(null);
     setError(null);
@@ -105,7 +108,7 @@ export default function ImportLeadsModal({
           accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => {
             setFile(e.target.files?.[0] ?? null);
-            reset();
+            clearResults();
           }}
           style={{ marginBottom: 12 }}
         />
