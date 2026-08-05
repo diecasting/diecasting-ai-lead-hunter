@@ -3,6 +3,7 @@
 // VITE_API_BASE to override (e.g. a deployed backend URL) at build time.
 import type {
   CompanyLead,
+  DiscoveryResult,
   LeadImportPreview,
   LeadImportSummary,
   LeadTimeline,
@@ -164,4 +165,14 @@ export const api = {
     request<Record<string, CompanyLead[]>>("GET", "/crm/pipeline", undefined, {
       statuses,
     }),
+
+  // ---- Discovery (Phase 5 Stage 1) -------------------------------------
+  analyzeUrl: (url: string) =>
+    request<DiscoveryResult>("POST", "/discovery/analyze-url", { url }),
+
+  listDiscoveries: (limit = 50) =>
+    request<DiscoveryResult[]>("GET", "/discovery", undefined, { limit }),
+
+  addDiscoveryToCrm: (discoveryId: number) =>
+    request<CompanyLead>("POST", `/discovery/${discoveryId}/lead`),
 };

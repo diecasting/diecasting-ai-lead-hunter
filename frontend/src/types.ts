@@ -93,6 +93,30 @@ export interface LeadTimeline {
   events: LeadTimelineEvent[];
 }
 
+export interface DiscoveryResult {
+  id: number;
+  company_name: string;
+  website?: string | null;
+  country?: string | null;
+  industry?: string | null;
+  business_type?: string | null;
+  description?: string | null;
+  products: string[];
+  industries_served: string[];
+  detected_materials: string[];
+  detected_processes: string[];
+  buying_signals: string[];
+  supplier_opportunities: string[];
+  discovery_source: string;
+  confidence_score?: number | null;
+  lead_score?: number | null;
+  recommended_contact_role?: string | null;
+  procurement_type?: string | null;
+  procurement_score?: number | null;
+  lead_id?: number | null;
+  created_at?: string | null;
+}
+
 export interface RankingResponse {
   count: number;
   filters: { min_score: number; priority: string | null };
