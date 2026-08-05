@@ -9,6 +9,7 @@ import QualityPage from "./pages/QualityPage";
 import DiscoveryPage from "./pages/DiscoveryPage";
 import DiscoveryJobsPage from "./pages/DiscoveryJobsPage";
 import DiscoveryAutomationPage from "./pages/DiscoveryAutomationPage";
+import FollowupAutomationPage from "./pages/FollowupAutomationPage";
 import "./index.css";
 
 const router = createHashRouter([
@@ -24,6 +25,7 @@ const router = createHashRouter([
       { path: "discovery", element: <DiscoveryPage /> },
       { path: "discovery/jobs", element: <DiscoveryJobsPage /> },
       { path: "discovery/automation", element: <DiscoveryAutomationPage /> },
+      { path: "followups", element: <FollowupAutomationPage /> },
     ],
   },
 ]);

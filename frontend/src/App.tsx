@@ -20,6 +20,9 @@ export default function App() {
         <NavLink to="/discovery/automation" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           Automation
         </NavLink>
+        <NavLink to="/followups" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
+          Follow-up Automation
+        </NavLink>
         <NavLink to="/quality" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           Quality & Ranking
         </NavLink>

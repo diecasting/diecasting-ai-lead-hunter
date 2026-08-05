@@ -7,9 +7,11 @@ import type {
   DiscoveryJob,
   DiscoveryResult,
   DiscoverySchedule,
+  FollowUpSequence,
   LeadImportPreview,
   LeadImportSummary,
   LeadTimeline,
+  OutreachFollowUp,
   OutreachMessage,
   RankingResponse,
   SendDraftResponse,
@@ -210,4 +212,42 @@ export const api = {
 
   runScheduleNow: (id: number) =>
     request<DiscoveryJob>("POST", `/discovery/schedules/${id}/run`),
+
+  // ---- Follow-up automation (Phase 6 Stage 1) ---------------------------
+  createSequence: (payload: {
+    name: string;
+    steps: { delay_days: number; template: string }[];
+    enabled?: boolean;
+  }) => request<FollowUpSequence>("POST", "/outreach/sequences", payload),
+
+  listSequences: () => request<FollowUpSequence[]>("GET", "/outreach/sequences"),
+
+  updateSequence: (id: number, payload: Partial<FollowUpSequence>) =>
+    request<FollowUpSequence>("PATCH", `/outreach/sequences/${id}`, payload),
+
+  startFollowup: (leadId: number, sequenceId?: number) =>
+    request<OutreachFollowUp[]>(
+      "POST",
+      `/outreach/leads/${leadId}/start-followup`,
+      sequenceId ? { sequence_id: sequenceId } : {},
+    ),
+
+  listFollowups: (params?: { status?: string; lead_id?: number }) =>
+    request<OutreachFollowUp[]>("GET", "/outreach/followups", undefined, {
+      status: params?.status,
+      lead_id: params?.lead_id,
+    }),
+
+  updateFollowupStatus: (id: number, status: "pending" | "cancelled") =>
+    request<OutreachFollowUp>("PATCH", `/outreach/followups/${id}`, { status }),
+
+  processFollowups: () =>
+    request<{
+      processed: number;
+      generated: number;
+      sent: number;
+      cancelled: number;
+      skipped_no_recipient: number;
+      send_failed: number;
+    }>("POST", "/outreach/followups/process"),
 };

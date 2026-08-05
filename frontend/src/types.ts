@@ -159,6 +159,27 @@ export interface DiscoverySchedule {
   created_at?: string | null;
 }
 
+export interface FollowUpSequence {
+  id: number;
+  name: string;
+  steps: { delay_days: number; template: string }[];
+  enabled: boolean;
+  created_at?: string | null;
+}
+
+export interface OutreachFollowUp {
+  id: number;
+  lead_id: number;
+  lead_name?: string | null;
+  original_message_id?: number | null;
+  sequence_id?: number | null;
+  step_number: number;
+  scheduled_at?: string | null;
+  status: "pending" | "generated" | "sent" | "cancelled";
+  message_id?: number | null;
+  created_at?: string | null;
+}
+
 export interface RankingResponse {
   count: number;
   filters: { min_score: number; priority: string | null };

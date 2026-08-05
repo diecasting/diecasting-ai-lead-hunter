@@ -13,6 +13,7 @@ from app.models.discovery_job import DiscoveryJob, DiscoveryTask
 from app.models.discovery_schedule import DiscoverySchedule
 from app.models.email_verification import EmailVerification
 from app.models.email_tracking import EmailTracking
+from app.models.followup import FollowUpSequence, OutreachFollowUp
 from app.models.lead import CompanyLead
 from app.models.lead_source import LeadSource
 from app.models.outreach_event import OutreachEvent
@@ -27,6 +28,8 @@ __all__ = [
     "DiscoveryJob",
     "DiscoveryTask",
     "DiscoverySchedule",
+    "FollowUpSequence",
+    "OutreachFollowUp",
     "SearchResult",
     "CrawlTask",
     "AIAnalysis",
