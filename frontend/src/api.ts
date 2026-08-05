@@ -6,6 +6,7 @@ import type {
   CreateJobResponse,
   DiscoveryJob,
   DiscoveryResult,
+  DiscoverySchedule,
   LeadImportPreview,
   LeadImportSummary,
   LeadTimeline,
@@ -187,4 +188,26 @@ export const api = {
 
   runDiscoveryJob: (jobId: number) =>
     request<DiscoveryJob>("POST", `/discovery/jobs/${jobId}/run`),
+
+  // ---- Discovery schedules (Phase 5 Stage 3) ----------------------------
+  createSchedule: (payload: {
+    keyword: string;
+    frequency?: string;
+    enabled?: boolean;
+    lead_score_threshold?: number;
+    confidence_threshold?: number;
+  }) => request<DiscoverySchedule>("POST", "/discovery/schedules", payload),
+
+  listSchedules: () => request<DiscoverySchedule[]>("GET", "/discovery/schedules"),
+
+  updateSchedule: (id: number, payload: Partial<DiscoverySchedule>) =>
+    request<DiscoverySchedule>("PATCH", `/discovery/schedules/${id}`, payload),
+
+  deleteSchedule: (id: number) => request<void>("DELETE", `/discovery/schedules/${id}`),
+
+  scheduleHistory: (id: number) =>
+    request<DiscoveryJob[]>("GET", `/discovery/schedules/${id}/history`),
+
+  runScheduleNow: (id: number) =>
+    request<DiscoveryJob>("POST", `/discovery/schedules/${id}/run`),
 };

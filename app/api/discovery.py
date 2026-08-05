@@ -20,6 +20,7 @@ from app.crud import leads as leads_crud
 from app.database import get_db
 from app.discovery import crud as discovery_crud
 from app.discovery import queue as discovery_queue
+from app.discovery import scheduler as discovery_scheduler
 from app.discovery.analyzer import analyze_website
 from app.models.company_discovery import CompanyDiscovery
 from app.schemas.lead import CompanyLeadRead
@@ -216,59 +217,27 @@ def add_discovery_to_crm(discovery_id: int, db: Session = Depends(get_db)):
 
     Only creates the ``CompanyLead`` row (``lead_source='discovery'``); no
     email is sent. The existing Lead -> Outreach pipeline (generate email,
-    quality gate, send) applies from the lead's detail page.
+    quality gate, send) applies from the lead's detail page. Uses the same
+    qualification pipeline as the scheduler's auto-qualification.
     """
+    from app.discovery.qualify import discovery_to_lead
+
     row = discovery_crud.get(db, discovery_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Discovery not found")
-    if row.lead_id is not None:
+
+    lead, status = discovery_to_lead(db, row)
+    if status == "created":
+        return lead
+    if status == "already_linked":
         raise HTTPException(
             status_code=409,
-            detail=f"Discovery already added to CRM as lead #{row.lead_id}",
+            detail=f"Discovery already added to CRM as lead #{lead.id}",
         )
-
-    website = row.website or None
-    if website and leads_crud.get_by_website(db, website):
-        existing = leads_crud.get_by_website(db, website)
-        raise HTTPException(
-            status_code=409,
-            detail=f"Lead with website already exists (lead #{existing.id})",
-        )
-
-    profile = {}
-    if row.profile:
-        try:
-            profile = json.loads(row.profile)
-        except Exception:
-            profile = {}
-
-    lead_score = row.lead_score or 0
-    priority = "HIGH" if lead_score >= 70 else ("MEDIUM" if lead_score >= 50 else "LOW")
-
-    lead = leads_crud.create(
-        db,
-        name=row.company_name,
-        website=website,
-        country=row.country,
-        industry=row.industry,
-        business_type=profile.get("business_type"),
-        description=profile.get("description"),
-        materials=", ".join(
-            (row.detected_materials or "").split(", ")
-        ) or None,
-        manufacturing_process=", ".join(
-            (row.detected_processes or "").split(", ")
-        ) or None,
-        buying_signal=row.buying_signals,
-        contact_role=row.recommended_contact_role,
-        lead_score=lead_score if lead_score else None,
-        priority=priority,
-        sales_priority=priority,
-        lead_source="discovery",
-        crawl_status="pending",
+    raise HTTPException(
+        status_code=409,
+        detail=f"Lead with website already exists (lead #{lead.id})",
     )
-    discovery_crud.link_to_lead(db, row, lead.id)
-    return lead
 
 
 # ---------------------------------------------------------------------------
@@ -317,4 +286,138 @@ def run_discovery_job(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Discovery job is already running")
     discovery_queue.run_job(db, job)
     db.refresh(job)
+    return _job_to_read(job)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Stage 3: Discovery schedules (recurring + auto-qualification)
+# ---------------------------------------------------------------------------
+class ScheduleCreate(BaseModel):
+    """Payload for a recurring discovery schedule."""
+
+    keyword: str
+    frequency: str = "daily"  # daily | weekly | monthly
+    enabled: bool = True
+    lead_score_threshold: int = 50
+    confidence_threshold: int = 40
+
+
+class ScheduleUpdate(BaseModel):
+    """Partial update for a discovery schedule."""
+
+    keyword: Optional[str] = None
+    frequency: Optional[str] = None
+    enabled: Optional[bool] = None
+    lead_score_threshold: Optional[int] = None
+    confidence_threshold: Optional[int] = None
+
+
+class ScheduleRead(BaseModel):
+    """A recurring discovery schedule."""
+
+    id: int
+    keyword: str
+    frequency: str
+    enabled: bool
+    lead_score_threshold: int
+    confidence_threshold: int
+    last_run: Optional[str] = None
+    next_run: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+def _schedule_to_read(s) -> ScheduleRead:
+    return ScheduleRead(
+        id=s.id,
+        keyword=s.keyword,
+        frequency=s.frequency,
+        enabled=s.enabled,
+        lead_score_threshold=s.lead_score_threshold,
+        confidence_threshold=s.confidence_threshold,
+        last_run=s.last_run.isoformat() if s.last_run else None,
+        next_run=s.next_run.isoformat() if s.next_run else None,
+        created_at=s.created_at.isoformat() if s.created_at else None,
+    )
+
+
+def _validate_frequency(frequency: str) -> str:
+    freq = (frequency or "daily").lower()
+    if freq not in ("daily", "weekly", "monthly"):
+        raise HTTPException(
+            status_code=422, detail="frequency must be one of: daily, weekly, monthly"
+        )
+    return freq
+
+
+@router.post("/schedules", response_model=ScheduleRead, status_code=201)
+def create_schedule(payload: ScheduleCreate, db: Session = Depends(get_db)):
+    """Create a recurring discovery schedule (auto-runs on the daily hook)."""
+    keyword = (payload.keyword or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=422, detail="keyword is required")
+    schedule = discovery_scheduler.create_schedule(
+        db,
+        keyword=keyword,
+        frequency=_validate_frequency(payload.frequency),
+        enabled=payload.enabled,
+        lead_score_threshold=payload.lead_score_threshold,
+        confidence_threshold=payload.confidence_threshold,
+    )
+    return _schedule_to_read(schedule)
+
+
+@router.get("/schedules", response_model=List[ScheduleRead])
+def list_schedules(db: Session = Depends(get_db)):
+    """Return all recurring discovery schedules."""
+    return [_schedule_to_read(s) for s in discovery_scheduler.list_schedules(db)]
+
+
+@router.patch("/schedules/{schedule_id}", response_model=ScheduleRead)
+def update_schedule(
+    schedule_id: int, payload: ScheduleUpdate, db: Session = Depends(get_db)
+):
+    """Update a schedule (frequency / enabled / thresholds)."""
+    schedule = discovery_scheduler.get_schedule(db, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    fields = payload.model_dump(exclude_unset=True)
+    if "frequency" in fields and fields["frequency"]:
+        fields["frequency"] = _validate_frequency(fields["frequency"])
+    if "keyword" in fields:
+        fields["keyword"] = (fields["keyword"] or "").strip()
+        if not fields["keyword"]:
+            raise HTTPException(status_code=422, detail="keyword is required")
+    updated = discovery_scheduler.update_schedule(db, schedule, **fields)
+    return _schedule_to_read(updated)
+
+
+@router.delete("/schedules/{schedule_id}", status_code=204)
+def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
+    """Delete a recurring discovery schedule (history jobs are kept)."""
+    schedule = discovery_scheduler.get_schedule(db, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    discovery_scheduler.delete_schedule(db, schedule)
+
+
+@router.get("/schedules/{schedule_id}/history", response_model=List[JobRead])
+def schedule_history(schedule_id: int, db: Session = Depends(get_db)):
+    """Execution history for a schedule: its discovery jobs, newest first."""
+    schedule = discovery_scheduler.get_schedule(db, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    return [_job_to_read(job) for job in schedule.jobs]
+
+
+@router.post("/schedules/{schedule_id}/run", response_model=JobRead)
+def run_schedule_now(schedule_id: int, db: Session = Depends(get_db)):
+    """Run a schedule immediately (manual trigger); auto-qualifies results."""
+    schedule = discovery_scheduler.get_schedule(db, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    discovery_scheduler.run_schedule(db, schedule)
+    db.refresh(schedule)
+    job = schedule.jobs[0] if schedule.jobs else None
+    if job is None:
+        raise HTTPException(status_code=500, detail="Schedule run produced no job")
     return _job_to_read(job)

@@ -25,6 +25,12 @@ class DiscoveryJob(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     keyword = Column(String(255), nullable=False, index=True)
+    schedule_id = Column(
+        Integer,
+        ForeignKey("discovery_schedules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status = Column(
         String(20), nullable=False, default="pending",
         server_default="pending", index=True,

@@ -147,6 +147,18 @@ export interface CreateJobResponse {
   status: string;
 }
 
+export interface DiscoverySchedule {
+  id: number;
+  keyword: string;
+  frequency: "daily" | "weekly" | "monthly";
+  enabled: boolean;
+  lead_score_threshold: number;
+  confidence_threshold: number;
+  last_run?: string | null;
+  next_run?: string | null;
+  created_at?: string | null;
+}
+
 export interface RankingResponse {
   count: number;
   filters: { min_score: number; priority: string | null };

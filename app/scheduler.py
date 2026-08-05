@@ -33,6 +33,13 @@ def _job() -> None:
 
         outreach_report = run_daily_pipeline(db, dry_run=True)
         print(f"[scheduler] outreach automation finished: {outreach_report}")
+
+        # Phase 5 Stage 3: run due recurring discovery schedules; qualified
+        # discoveries are auto-added to the CRM (no emails here).
+        from app.discovery.scheduler import run_due_schedules
+
+        discovery_report = run_due_schedules(db)
+        print(f"[scheduler] discovery automation finished: {discovery_report}")
     except Exception as exc:  # pragma: no cover - depends on live services
         print(f"[scheduler] pipeline error: {exc}")
     finally:
