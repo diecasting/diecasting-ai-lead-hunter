@@ -63,6 +63,18 @@ def remove(db: Session, *, lead_id: int) -> Optional[CompanyLead]:
     obj = db.query(CompanyLead).filter(CompanyLead.id == lead_id).first()
     if obj is None:
         return None
+    # The local SQLite dev DB does not enforce ON DELETE CASCADE, and the ORM's
+    # default delete disassociates children by nulling their FK — which fails
+    # for NOT NULL columns (e.g. outreach_messages.lead_id). Delete every FK
+    # child explicitly first so a lead with related records can be removed.
+    for rel in CompanyLead.__mapper__.relationships:
+        if rel.direction.name != "ONETOMANY":
+            continue
+        child_cls = rel.mapper.class_
+        child_fk_col = rel.local_remote_pairs[0][1]
+        db.query(child_cls).filter(child_fk_col == lead_id).delete(
+            synchronize_session=False
+        )
     db.delete(obj)
     db.commit()
     return obj
