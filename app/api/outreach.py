@@ -564,3 +564,86 @@ def list_unprocessed_inbox(db: Session = Depends(get_db)):
         .all()
     )
     return [_incoming_to_read(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 Stage 4: SMTP provider status + connectivity test
+# ---------------------------------------------------------------------------
+class EmailTestRequest(BaseModel):
+    """Optional payload for the SMTP connectivity test."""
+
+    recipient: Optional[str] = None
+    subject: str = "Lead Hunter SMTP test"
+    body: str = "This is a test email from the Lead Hunter sending pipeline."
+
+
+@router.get("/email-status", response_model=dict)
+def email_status():
+    """Return the active email provider configuration.
+
+    Never exposes the password. ``configured`` is true only when host +
+    credentials (including password) are set; otherwise the mock provider
+    (dry-run) is active.
+    """
+    from app.config import settings
+    from app.outreach.sender import _smtp_configured, smtp_implicit_ssl
+
+    configured = _smtp_configured()
+    return {
+        "provider": "smtp" if configured else "mock",
+        "configured": configured,
+        "sender_email": (
+            settings.smtp_from_email or settings.smtp_username or settings.smtp_user or ""
+        ),
+        "smtp_host": settings.smtp_host or "",
+        "smtp_port": settings.smtp_port,
+        "use_ssl": smtp_implicit_ssl(),
+    }
+
+
+@router.post("/email-test", response_model=dict)
+def email_test(payload: Optional[EmailTestRequest] = None):
+    """Send a real test email through the configured SMTP provider.
+
+    Verifies connectivity + authentication. Does NOT modify the outreach
+    workflow — no outreach messages or events are written. Without SMTP
+    configuration the mock provider is used (dry-run success), so the
+    endpoint is fully testable offline.
+    """
+    from app.config import settings
+    from app.outreach.sender import _smtp_configured, get_email_sender
+
+    sender = get_email_sender()
+    recipient = (payload.recipient or "").strip() if payload is not None else ""
+    if not recipient:
+        recipient = (
+            settings.smtp_from_email
+            or settings.smtp_username
+            or settings.smtp_user
+            or ""
+        ).strip()
+    validation_error = sender.validate_recipient(recipient)
+    if validation_error:
+        raise HTTPException(status_code=422, detail=validation_error)
+
+    subject = payload.subject if payload is not None else "Lead Hunter SMTP test"
+    body = (
+        payload.body
+        if payload is not None
+        else "This is a test email from the Lead Hunter sending pipeline."
+    )
+    receipt = sender.send_email(
+        subject=subject,
+        body=body,
+        recipient=recipient,
+        sender=sender.from_email or None,
+    )
+    return {
+        "success": receipt.success,
+        "provider": "smtp" if _smtp_configured() else "mock",
+        "configured": _smtp_configured(),
+        "dry_run": receipt.dry_run,
+        "recipient": recipient,
+        "sent_at": receipt.sent_at,
+        "error": receipt.error,
+    }

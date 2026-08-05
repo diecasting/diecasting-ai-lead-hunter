@@ -7,6 +7,12 @@ the module runs in *dry-run* mode (no real email sent) which is convenient for
 tests and local development — it still records the send event so the pipeline
 can advance.
 
+Connection security (Phase 6 Stage 4 / SiteGround):
+  * port ``465`` → implicit SSL (``smtplib.SMTP_SSL``) — SSL/TLS from the
+    first byte, no STARTTLS;
+  * any other port → plain ``smtplib.SMTP`` upgraded with STARTTLS when
+    ``SMTP_USE_TLS`` is set (e.g. 587 / 25).
+
 Two layers:
 
 * **Phase 4 Stage 5 abstraction** — :class:`EmailSender` interface
@@ -115,9 +121,7 @@ class SmtpEmailSender(EmailSender):
                 # Injected transport — no real network connection.
                 _deliver_via_transport(self.transport, email_msg)
             else:
-                with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-                    if settings.smtp_use_tls:
-                        server.starttls()
+                with open_smtp_server() as server:
                     server.login(
                         settings.smtp_username or settings.smtp_user,
                         settings.smtp_password,
@@ -186,6 +190,32 @@ def get_email_sender(*, dry_run: Optional[bool] = None, transport=None) -> Email
 
 def _smtp_configured() -> bool:
     return bool(settings.smtp_host and (settings.smtp_user or settings.smtp_username) and settings.smtp_password)
+
+
+def smtp_implicit_ssl() -> bool:
+    """True when the SMTP connection must use implicit SSL (port 465).
+
+    SiteGround (and most providers offering SSL/TLS on 465) require
+    ``smtplib.SMTP_SSL`` from the first byte — STARTTLS cannot upgrade a
+    plain connection on that port. Ports 25 / 587 use STARTTLS instead.
+    """
+    return int(settings.smtp_port or 0) == 465
+
+
+def open_smtp_server():
+    """Open a connection to the configured SMTP server.
+
+    Port 465 → ``smtplib.SMTP_SSL`` (implicit SSL); any other port → a plain
+    ``smtplib.SMTP`` connection upgraded with STARTTLS when ``SMTP_USE_TLS``
+    is set. Returns a context manager that yields the connected server.
+    """
+    timeout = 30
+    if smtp_implicit_ssl():
+        return smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=timeout)
+    server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=timeout)
+    if settings.smtp_use_tls:
+        server.starttls()
+    return server
 
 
 def _build_message(subject: str, body: str, sender: str, recipient: str) -> EmailMessage:
@@ -267,9 +297,7 @@ def send_email(
                 # Injected transport — no real network connection.
                 _deliver_via_transport(transport, email_msg)
             else:
-                with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-                    if settings.smtp_use_tls:
-                        server.starttls()
+                with open_smtp_server() as server:
                     server.login(settings.smtp_user, settings.smtp_password)
                     server.send_message(email_msg)
         except Exception as exc:  # pragma: no cover - network/SMTP dependent
@@ -301,7 +329,11 @@ def send_email(
 
 def _deliver_via_transport(transport, email_msg: EmailMessage) -> None:
     """Drive an injectable SMTP-like transport (used for mocked sends)."""
-    if getattr(transport, "starttls", None) is not None and settings.smtp_use_tls:
+    if (
+        getattr(transport, "starttls", None) is not None
+        and settings.smtp_use_tls
+        and not smtp_implicit_ssl()
+    ):
         transport.starttls()
     if getattr(transport, "login", None) is not None:
         transport.login(
