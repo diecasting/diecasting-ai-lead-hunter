@@ -25,6 +25,11 @@ env/
 *.log
 data/
 
+# Local/test SQLite databases (never commit)
+*.db
+*.sqlite3
+*.db-journal
+
 # IDE
 .idea/
 .vscode/

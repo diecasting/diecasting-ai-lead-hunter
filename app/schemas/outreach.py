@@ -25,6 +25,7 @@ class OutreachMessageRead(BaseModel):
     open_count: int = 0
     click_count: int = 0
     html_body: Optional[str] = None
+    quality_score: Optional[int] = None
     created_at: datetime
 
 

@@ -25,6 +25,12 @@ class CompanyLeadBase(BaseModel):
     lead_score: Optional[int] = None
     lead_score_breakdown: Optional[str] = None
     priority: Optional[str] = None
+    # Phase 4 industrial attributes (accepted from the dashboard lead form)
+    business_type: Optional[str] = None
+    materials: Optional[str] = None
+    manufacturing_process: Optional[str] = None
+    buying_signal: Optional[str] = None
+    contact_role: Optional[str] = None
 
 
 class CompanyLeadCreate(CompanyLeadBase):

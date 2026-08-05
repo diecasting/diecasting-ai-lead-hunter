@@ -119,7 +119,10 @@ def build_context_from_lead(lead, *, db=None) -> CustomerContext:
         except Exception:
             pass
 
-    role = detect_primary_role(
+    # Prefer an explicitly stored contact role (set via the dashboard lead form);
+    # otherwise fall back to keyword-based detection from the lead's signals.
+    stored_role = getattr(lead, "contact_role", None) or ""
+    role = stored_role or detect_primary_role(
         industry=lead.industry or "",
         business_type=lead.business_type or "",
         buying_signal=lead.buying_signal or "",

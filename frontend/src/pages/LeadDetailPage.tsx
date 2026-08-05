@@ -250,8 +250,16 @@ export default function LeadDetailPage() {
               </span>
             </div>
             <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>
-              role: {m.contact_role ?? "—"} · {formatDate(m.created_at)} · opens:{" "}
-              {m.open_count} · clicks: {m.click_count}
+              role: {m.contact_role ?? "—"} · quality:{" "}
+              {m.quality_score != null ? (
+                <span style={{ color: scoreColor(m.quality_score) }}>
+                  {m.quality_score}/100
+                </span>
+              ) : (
+                "—"
+              )}{" "}
+              · {formatDate(m.created_at)} · opens: {m.open_count} · clicks:{" "}
+              {m.click_count}
             </div>
             <pre>{m.body}</pre>
           </div>

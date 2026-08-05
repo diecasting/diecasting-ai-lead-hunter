@@ -43,6 +43,9 @@ class OutreachMessage(Base):
     click_count = Column(Integer, nullable=False, default=0, server_default="0")
     html_body = Column(Text, nullable=True)
 
+    # Phase 4 Stage 2: email quality score (0-100) computed at generation time.
+    quality_score = Column(Integer, nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     lead = relationship("CompanyLead", backref="outreach_messages", lazy="selectin")

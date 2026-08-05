@@ -17,6 +17,7 @@ def create(
     status: str = "draft",
     is_followup: bool = False,
     followup_seq: int = 0,
+    quality_score: Optional[int] = None,
 ) -> OutreachMessage:
     obj = OutreachMessage(
         lead_id=lead_id,
@@ -26,6 +27,7 @@ def create(
         status=status,
         is_followup=is_followup,
         followup_seq=followup_seq,
+        quality_score=quality_score,
     )
     db.add(obj)
     db.commit()

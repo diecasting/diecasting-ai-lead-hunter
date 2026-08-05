@@ -19,6 +19,7 @@ export interface CompanyLead {
   materials?: string | null;
   manufacturing_process?: string | null;
   buying_signal?: string | null;
+  contact_role?: string | null;
   do_not_contact: boolean;
   bounce_count: number;
   acquisition_channel?: string | null;
@@ -59,6 +60,7 @@ export interface OutreachMessage {
   followup_seq: number;
   open_count: number;
   click_count: number;
+  quality_score?: number | null;
   created_at: string;
 }
 

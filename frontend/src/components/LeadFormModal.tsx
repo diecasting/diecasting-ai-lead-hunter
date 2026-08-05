@@ -14,6 +14,7 @@ const FIELDS: { key: keyof CompanyLead; label: string; type?: string }[] = [
   { key: "country", label: "Country" },
   { key: "industry", label: "Industry" },
   { key: "business_type", label: "Business Type" },
+  { key: "contact_role", label: "Contact Role" },
   { key: "contact_email", label: "Contact Email" },
   { key: "materials", label: "Materials" },
   { key: "manufacturing_process", label: "Manufacturing Process" },

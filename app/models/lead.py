@@ -65,6 +65,7 @@ class CompanyLead(Base):
     materials = Column(Text, nullable=True)                  # detected material keywords
     manufacturing_process = Column(Text, nullable=True)      # detected process keywords
     buying_signal = Column(Text, nullable=True)              # HIGH / MEDIUM / LOW (+ detail)
+    contact_role = Column(String(120), nullable=True)       # primary contact role/title (Phase 4)
 
     # Phase 2.5: CRM pipeline
     lead_status = Column(

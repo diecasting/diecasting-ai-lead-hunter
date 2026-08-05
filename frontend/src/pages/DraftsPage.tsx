@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { OutreachMessage } from "../types";
-import { formatDate } from "../utils";
+import { formatDate, scoreColor } from "../utils";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "#6b7280",
@@ -64,6 +64,7 @@ export default function DraftsPage() {
               <th>Subject</th>
               <th>Role</th>
               <th>Status</th>
+              <th>Quality</th>
               <th>Created</th>
               <th></th>
             </tr>
@@ -90,6 +91,19 @@ export default function DraftsPage() {
                     {d.status}
                   </span>
                 </td>
+                <td>
+                  {d.quality_score != null ? (
+                    <span
+                      className="badge"
+                      style={{ background: scoreColor(d.quality_score) }}
+                      title="Email quality score (0-100): 0.4×personalization + 0.4×relevance + 0.2×(100−spam)"
+                    >
+                      {d.quality_score}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td>{formatDate(d.created_at)}</td>
                 <td>
                   <button className="secondary" onClick={() => setSelected(d)}>
@@ -108,7 +122,9 @@ export default function DraftsPage() {
             <h2>{selected.subject}</h2>
             <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
               Draft #{selected.id} · lead #{selected.lead_id} · role:{" "}
-              {selected.contact_role ?? "—"} · {formatDate(selected.created_at)}
+              {selected.contact_role ?? "—"} · quality:{" "}
+              {selected.quality_score != null ? `${selected.quality_score}/100` : "—"} ·{" "}
+              {formatDate(selected.created_at)}
             </div>
             <pre style={{ maxHeight: 420, overflowY: "auto" }}>{selected.body}</pre>
             <div className="toolbar" style={{ justifyContent: "flex-end", marginTop: 14 }}>

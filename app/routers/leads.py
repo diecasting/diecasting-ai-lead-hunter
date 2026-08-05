@@ -329,6 +329,20 @@ def generate_email(
         body_parts.append("\n" + cta)
     full_body = "\n\n".join(body_parts)
 
+    # Phase 4 Stage 2: compute the email quality score (0-100) and persist it so
+    # the dashboard can display a quality gate per draft.
+    quality_score = None
+    try:
+        from app.outreach.context import build_context_from_lead
+        from app.outreach.email_quality import score_email_quality
+
+        ctx = build_context_from_lead(lead, db=db)
+        quality = score_email_quality(full_body, ctx)
+        quality_score = quality.get("quality")
+    except Exception:
+        # Quality scoring is best-effort; never block draft creation.
+        quality_score = None
+
     msg = outreach_crud.create(
         db,
         lead_id=lead.id,
@@ -336,6 +350,7 @@ def generate_email(
         body=full_body,
         contact_role=result.get("contact_role"),
         status="draft",
+        quality_score=quality_score,
     )
     return msg
 
