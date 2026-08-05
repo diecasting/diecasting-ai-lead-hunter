@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import type { CompanyLead, OutreachMessage } from "../types";
+import type { CompanyLead, LeadTimeline, OutreachMessage } from "../types";
 import {
   priorityColor,
   priorityBadge,
@@ -12,7 +12,17 @@ import {
 } from "../utils";
 import LeadFormModal from "../components/LeadFormModal";
 
-const STATUS_FLOW = ["new", "qualified", "email_generated", "approved", "contacted", "replied", "customer", "lost"];
+// Phase 4.6 lead pipeline status set.
+const STATUS_FLOW = ["new", "contacted", "sent", "replied", "qualified", "rfq", "customer", "closed"];
+
+const EVENT_LABELS: Record<string, string> = {
+  generated: "Email generated",
+  approved: "Draft approved",
+  sent: "Email sent",
+  replied: "Lead replied",
+  opened: "Opened",
+  bounced: "Bounced",
+};
 
 export default function LeadDetailPage() {
   const { id } = useParams();
@@ -21,6 +31,7 @@ export default function LeadDetailPage() {
 
   const [lead, setLead] = useState<CompanyLead | null>(null);
   const [messages, setMessages] = useState<OutreachMessage[]>([]);
+  const [timeline, setTimeline] = useState<LeadTimeline | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -30,12 +41,14 @@ export default function LeadDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [l, msgs] = await Promise.all([
+      const [l, msgs, tl] = await Promise.all([
         api.getLead(leadId),
         api.listLeadMessages(leadId).catch(() => []),
+        api.getLeadTimeline(leadId).catch(() => null),
       ]);
       setLead(l);
       setMessages(msgs);
+      setTimeline(tl);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -227,9 +240,39 @@ export default function LeadDetailPage() {
             ))}
           </select>
           <span className="muted" style={{ fontSize: 13 }}>
-            current: <strong>{lead.lead_status}</strong>
+            current stage: <strong>{lead.lead_status}</strong>
           </span>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Outreach Timeline</h2>
+        {!timeline || timeline.events.length === 0 ? (
+          <div className="muted">
+            No outreach activity yet — generate an email to start the timeline.
+          </div>
+        ) : (
+          <div className="timeline">
+            {timeline.events.map((e) => (
+              <div key={e.id} className="timeline-item">
+                <div className="timeline-dot" />
+                <div>
+                  <div>
+                    <strong>{EVENT_LABELS[e.event_type] ?? e.event_type}</strong>
+                    <span className="muted" style={{ fontSize: 12, marginLeft: 8 }}>
+                      {formatDate(e.created_at)}
+                    </span>
+                  </div>
+                  {e.message_subject ? (
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {e.message_subject}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -243,10 +286,25 @@ export default function LeadDetailPage() {
             className="card"
             style={{ background: "var(--panel-2)", marginBottom: 10 }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <strong>{m.subject}</strong>
-              <span className="badge" style={{ background: "var(--accent)" }}>
-                {m.status}
+              <span>
+                <span className="badge" style={{ background: "var(--accent)" }}>
+                  {m.status}
+                </span>{" "}
+                <span
+                  className="badge"
+                  style={{
+                    background:
+                      m.send_status === "sent"
+                        ? "#16a34a"
+                        : m.send_status === "failed"
+                          ? "#dc2626"
+                          : "#6b7280",
+                  }}
+                >
+                  {m.send_status ?? "draft"}
+                </span>
               </span>
             </div>
             <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>
@@ -260,6 +318,14 @@ export default function LeadDetailPage() {
               )}{" "}
               · {formatDate(m.created_at)} · opens: {m.open_count} · clicks:{" "}
               {m.click_count}
+              {m.sent_at ? (
+                <>
+                  {" "}
+                  · sent: <strong>{formatDate(m.sent_at)}</strong>
+                </>
+              ) : (
+                ""
+              )}
             </div>
             <pre>{m.body}</pre>
           </div>

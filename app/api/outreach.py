@@ -50,7 +50,17 @@ def set_draft_gate(
     msg = outreach_crud.get(db, message_id)
     if msg is None:
         raise HTTPException(status_code=404, detail="Draft not found")
-    return outreach_crud.set_gate_status(db, msg, payload.gate_status)
+    updated = outreach_crud.set_gate_status(db, msg, payload.gate_status)
+    # Phase 4.6: releasing a draft to 'ready' is the approval event on the
+    # lead's outreach timeline.
+    if payload.gate_status == "ready":
+        try:
+            events_crud.create(
+                db, lead_id=msg.lead_id, event_type="approved", message_id=msg.id
+            )
+        except Exception:
+            pass  # timeline recording is best-effort
+    return updated
 
 
 @router.get("/leads/{lead_id}/messages", response_model=List[OutreachMessageRead])
@@ -134,6 +144,15 @@ def send_draft(
             events_crud.create(
                 db, lead_id=msg.lead_id, event_type="sent", message_id=msg.id
             )
+        except Exception:
+            pass
+        # Phase 4.6: a delivered email advances the lead pipeline to 'sent'.
+        try:
+            from app.outreach.workflow import transition as transition_status
+
+            lead = leads_crud.get(db, msg.lead_id)
+            if lead is not None and lead.lead_status in ("new", "qualified"):
+                transition_status(lead, "sent", db=db)
         except Exception:
             pass
         return SendDraftResponse(

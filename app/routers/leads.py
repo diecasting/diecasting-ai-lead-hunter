@@ -427,6 +427,15 @@ def generate_email(
         recipient_name=(lead.contact_name or "").strip() or None,
         recipient_email=(lead.contact_email or "").strip() or None,
     )
+    # Phase 4.6: record the generation on the lead's outreach timeline.
+    try:
+        from app.crud import outreach_events as events_crud
+
+        events_crud.create(
+            db, lead_id=lead.id, event_type="generated", message_id=msg.id
+        )
+    except Exception:
+        pass  # timeline recording is best-effort
     return msg
 
 
@@ -438,6 +447,24 @@ class LeadStatusUpdate(BaseModel):
 
     lead_status: str
     next_followup_date: Optional[datetime] = None
+
+
+class TimelineEvent(BaseModel):
+    """One entry on a lead's outreach timeline (Phase 4.6)."""
+
+    id: int
+    event_type: str
+    created_at: datetime
+    message_id: Optional[int] = None
+    message_subject: Optional[str] = None
+
+
+class LeadTimeline(BaseModel):
+    """The outreach timeline for a single lead, newest event first."""
+
+    lead_id: int
+    lead_status: str
+    events: List[TimelineEvent] = []
 
 
 @router.patch("/{lead_id}/status", response_model=CompanyLeadRead)
@@ -462,6 +489,20 @@ def update_lead_status(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    # Phase 4.6: a reply is a first-class outreach event on the timeline.
+    if payload.lead_status == "replied":
+        try:
+            from app.crud import outreach as outreach_crud
+            from app.crud import outreach_events as events_crud
+
+            latest = outreach_crud.get_by_lead(db, lead.id)
+            message_id = latest[0].id if latest else None
+            events_crud.create(
+                db, lead_id=lead.id, event_type="replied", message_id=message_id
+            )
+        except Exception:
+            pass  # timeline recording is best-effort
+
     if payload.next_followup_date is not None:
         lead.next_followup_date = payload.next_followup_date
         db.add(lead)
@@ -470,3 +511,42 @@ def update_lead_status(
 
     db.refresh(lead)
     return lead
+
+
+@router.get("/{lead_id}/timeline", response_model=LeadTimeline)
+def get_lead_timeline(lead_id: int, db: Session = Depends(get_db)):
+    """Return the outreach timeline for a lead (Phase 4.6).
+
+    Every outreach event (generated / approved / sent / replied) for the lead
+    is returned newest-first, decorated with the related message's subject so
+    the dashboard can render a readable engagement history. The response also
+    carries the lead's current pipeline stage (customer stage).
+    """
+    obj = crud.get(db, lead_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    from app.crud import outreach_events as events_crud
+    from app.models.outreach_message import OutreachMessage
+
+    events = events_crud.get_by_lead(db, lead_id)  # ordered id desc
+    subjects = {
+        mid: subject
+        for mid, subject in db.query(OutreachMessage.id, OutreachMessage.subject)
+        .filter(OutreachMessage.lead_id == lead_id)
+        .all()
+    }
+    return LeadTimeline(
+        lead_id=obj.id,
+        lead_status=obj.lead_status,
+        events=[
+            TimelineEvent(
+                id=e.id,
+                event_type=e.event_type,
+                created_at=e.created_at,
+                message_id=e.message_id,
+                message_subject=subjects.get(e.message_id),
+            )
+            for e in events
+        ],
+    )

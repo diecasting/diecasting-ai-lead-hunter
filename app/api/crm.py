@@ -54,15 +54,15 @@ def high_value(
     """Return the highest-value leads that have not yet been contacted.
 
     "Not contacted" means lead_status is before ``contacted`` (new / qualified /
-    email_generated / approved) and ``sales_priority`` is HIGH. Within that set,
-    leads are auto-sorted by ``lead_score`` (descending) so the hottest,
-    highest-fit prospects come first.
+    sent) and ``sales_priority`` is HIGH. Within that set, leads are auto-sorted
+    by ``lead_score`` (descending) so the hottest, highest-fit prospects come
+    first.
     """
     leads = (
         db.query(CompanyLead)
         .filter(
             CompanyLead.sales_priority == "HIGH",
-            CompanyLead.lead_status.in_(["new", "qualified", "email_generated", "approved"]),
+            CompanyLead.lead_status.in_(["new", "qualified", "sent"]),
         )
         .order_by(
             CompanyLead.lead_score.desc().nullslast(),

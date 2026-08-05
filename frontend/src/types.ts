@@ -79,6 +79,20 @@ export interface SendDraftResponse {
   error?: string | null;
 }
 
+export interface LeadTimelineEvent {
+  id: number;
+  event_type: string;
+  created_at: string;
+  message_id?: number | null;
+  message_subject?: string | null;
+}
+
+export interface LeadTimeline {
+  lead_id: number;
+  lead_status: string;
+  events: LeadTimelineEvent[];
+}
+
 export interface RankingResponse {
   count: number;
   filters: { min_score: number; priority: string | null };

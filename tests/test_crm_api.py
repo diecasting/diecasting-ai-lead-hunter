@@ -71,7 +71,7 @@ class TestLeadStatusUpdate:
         )
         lead_id = resp.json()["id"]
 
-        # new -> contacted is invalid (must go through qualified/email_generated/approved)
+        # new -> contacted is invalid (must go through qualified/sent)
         resp = client.patch(
             f"/leads/{lead_id}/status", json={"lead_status": "contacted"}
         )

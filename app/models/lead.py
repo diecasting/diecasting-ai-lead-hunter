@@ -76,7 +76,7 @@ class CompanyLead(Base):
     # Phase 2.5: CRM pipeline
     lead_status = Column(
         String(20), nullable=False, default="new", server_default="new", index=True
-    )  # new | qualified | email_generated | approved | contacted | replied | customer | lost
+    )  # new | contacted | sent | replied | qualified | rfq | customer | closed (Phase 4.6)
     last_activity_time = Column(DateTime(timezone=True), nullable=True)
     next_followup_date = Column(DateTime(timezone=True), nullable=True)
 

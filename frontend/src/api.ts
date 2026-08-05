@@ -5,6 +5,7 @@ import type {
   CompanyLead,
   LeadImportPreview,
   LeadImportSummary,
+  LeadTimeline,
   OutreachMessage,
   RankingResponse,
   SendDraftResponse,
@@ -118,6 +119,9 @@ export const api = {
 
   updateLeadStatus: (id: number, lead_status: string) =>
     request<CompanyLead>("PATCH", `/leads/${id}/status`, { lead_status }),
+
+  getLeadTimeline: (id: number) =>
+    request<LeadTimeline>("GET", `/leads/${id}/timeline`),
 
   // ---- Outreach ---------------------------------------------------------
   generateEmail: (leadId: number) =>

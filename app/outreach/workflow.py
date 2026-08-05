@@ -1,15 +1,17 @@
 """Outreach workflow — lead lifecycle state machine + automation pipeline.
 
-Lead pipeline stages (``CompanyLead.lead_status``):
-    new → qualified → email_generated → approved → contacted → replied → customer
-                                                       ↘ lost
+Lead pipeline stages (``CompanyLead.lead_status``) — Phase 4.6 set:
+    new → qualified → sent → contacted → replied → rfq → customer → closed
+            ↘ sent ↗            ↘ replied ↖
+                                    ↘ qualified (re-open)
+                                    ↘ closed (dead/closed-lost)
 
 The workflow module provides:
 - ``valid_transitions``: allowed status transitions (state machine).
 - ``can_transition`` / ``transition``: enforce valid moves.
 - ``run_pipeline_for_lead``: a single-lead automation step that, given a HIGH
-  priority lead, generates an email, marks it ``email_generated``, and (when
-  approved) sends it and marks ``contacted``.
+  priority lead, generates an email and (when approved) sends it, marking the
+  lead ``sent``.
 - ``run_daily_pipeline``: the APScheduler daily job — find new HIGH-priority
   leads, generate emails, create follow-up tasks.
 """
@@ -28,27 +30,27 @@ from app.outreach.followup import schedule_followups
 from app.outreach.quality_gate import EmailQualityGate
 from app.outreach.sender import send_email
 
-# Allowed transitions between lead_status values.
+# Allowed transitions between lead_status values (Phase 4.6 status set).
 VALID_TRANSITIONS: Dict[str, List[str]] = {
-    "new": ["qualified", "email_generated", "lost"],
-    "qualified": ["email_generated", "lost"],
-    "email_generated": ["approved", "lost"],
-    "approved": ["contacted", "lost"],
-    "contacted": ["replied", "lost"],
-    "replied": ["customer", "lost"],
-    "customer": ["lost"],
-    "lost": ["new"],
+    "new": ["qualified", "sent", "closed"],
+    "qualified": ["sent", "contacted", "rfq", "closed"],
+    "sent": ["contacted", "replied", "closed"],
+    "contacted": ["replied", "qualified", "rfq", "closed"],
+    "replied": ["qualified", "rfq", "customer", "closed"],
+    "rfq": ["customer", "replied", "closed"],
+    "customer": ["closed", "replied"],
+    "closed": [],
 }
 
 ALL_STATUSES = [
     "new",
-    "qualified",
-    "email_generated",
-    "approved",
     "contacted",
+    "sent",
     "replied",
+    "qualified",
+    "rfq",
     "customer",
-    "lost",
+    "closed",
 ]
 
 
@@ -115,14 +117,12 @@ def select_outreach_contact(
 def generate_email_for_lead(
     db: Session, lead: CompanyLead, *, use_llm: bool = True
 ) -> "object":
-    """Generate an outreach email for a lead and update its pipeline status.
+    """Generate an outreach email for a lead.
 
-    Sets lead_status to ``email_generated`` (from ``new``/``qualified``) and
-    creates an ``outreach_messages`` draft row.
+    Creates an ``outreach_messages`` draft row. The lead status is NOT changed
+    by generation (the pipeline advances to ``sent`` only when the email is
+    actually delivered); a ``generated`` outreach event records the step.
     """
-    if lead.lead_status in ("new", "qualified"):
-        transition(lead, "email_generated", db=db)
-
     result = generate_email_from_lead(db, lead, use_llm=use_llm)
     msg = outreach_crud.create(
         db,
@@ -152,9 +152,11 @@ def approve_and_send(
 
     The optional ``gate`` (an ``EmailQualityGate`` / ``BaseEmailVerifier``) is
     consulted before delivery; a blocked recipient returns a refused receipt and
-    the pipeline is NOT advanced to ``contacted``. Pass ``force=True`` to bypass.
+    the pipeline is NOT advanced to ``sent``. Pass ``force=True`` to bypass.
     ``contact`` is the selected ``Contact`` (if any) used for the gate's
     ``do_not_contact`` check.
+
+    On a successful send the lead transitions to ``sent``.
 
     Returns the send receipt from ``sender.send_email``.
     """
@@ -165,17 +167,13 @@ def approve_and_send(
     if contact is None and getattr(message, "tracking_token", None):
         contact = contacts_crud.get_by_email(db, recipient_email)
 
-    # Approve
-    if lead.lead_status == "email_generated":
-        transition(lead, "approved", db=db)
-
     # Send (quality gate screens the recipient first)
     receipt = send_email(
         db, message, recipient_email, dry_run=dry_run, gate=gate, lead=lead,
         contact=contact, force=force,
     )
     if receipt.get("success"):
-        transition(lead, "contacted", db=db)
+        transition(lead, "sent", db=db)
         # Schedule follow-ups relative to sent time.
         schedule_followups(db, lead, base_message_id=message.id)
     return receipt
@@ -187,8 +185,8 @@ def run_pipeline_for_lead(
 ) -> dict:
     """Full automated pipeline for a single HIGH-priority lead.
 
-    Steps: new/qualified → email_generated (generate) → approved → contacted
-    (send). Does nothing if the lead is already past ``approved``.
+    Steps: new/qualified → generate draft → send → ``sent``. Does nothing if
+    the lead is already past ``new``/``qualified``.
 
     Recipient selection (Phase 4 Stage 1): when the lead has extracted
     ``contacts``, the best one is chosen automatically via

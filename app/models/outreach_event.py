@@ -29,7 +29,7 @@ class OutreachEvent(Base):
     )
     event_type = Column(
         String(20), nullable=False, index=True
-    )  # sent | opened | replied | bounced
+    )  # generated | approved | sent | replied | opened | bounced (Phase 4.6)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     lead = relationship("CompanyLead", backref="outreach_events", lazy="selectin")

@@ -17,7 +17,9 @@ class TestStateMachine:
         assert "new" in VALID_TRANSITIONS
         assert "contacted" in VALID_TRANSITIONS
         assert "customer" in VALID_TRANSITIONS
-        assert "lost" in VALID_TRANSITIONS
+        assert "sent" in VALID_TRANSITIONS
+        assert "rfq" in VALID_TRANSITIONS
+        assert "closed" in VALID_TRANSITIONS
 
     def test_new_to_qualified(self):
         assert can_transition("new", "qualified") is True
@@ -25,17 +27,21 @@ class TestStateMachine:
     def test_new_to_contacted_invalid(self):
         assert can_transition("new", "contacted") is False
 
+    def test_new_to_sent(self):
+        assert can_transition("new", "sent") is True
+
     def test_contacted_to_replied(self):
         assert can_transition("contacted", "replied") is True
 
     def test_replied_to_customer(self):
         assert can_transition("replied", "customer") is True
 
-    def test_customer_to_lost(self):
-        assert can_transition("customer", "lost") is True
+    def test_customer_to_closed(self):
+        assert can_transition("customer", "closed") is True
 
-    def test_lost_to_new(self):
-        assert can_transition("lost", "new") is True
+    def test_closed_is_terminal(self):
+        assert can_transition("closed", "new") is False
+        assert can_transition("closed", "closed") is True
 
     def test_same_status_allowed(self):
         assert can_transition("contacted", "contacted") is True
@@ -63,14 +69,14 @@ class TestStateMachine:
 
     def test_all_statuses_valid(self):
         for s in ALL_STATUSES:
-            assert s in VALID_TRANSITIONS or s == "lost"
+            assert s in VALID_TRANSITIONS
 
 
 class TestPipelineIntegration:
     """Full pipeline run via API + workflow."""
 
-    def test_pipeline_new_to_contacted(self, client, db):
-        """new HIGH-priority lead → generate email → send → contacted."""
+    def test_pipeline_new_to_sent(self, client, db):
+        """new HIGH-priority lead → generate email → send → sent."""
         resp = client.post(
             "/leads",
             json={
@@ -93,7 +99,7 @@ class TestPipelineIntegration:
         report = run_pipeline_for_lead(db, lead, dry_run=True, use_llm=False)
         assert "generated" in report["steps"]
         assert "sent" in report["steps"]
-        assert lead.lead_status == "contacted"
+        assert lead.lead_status == "sent"
 
     def test_pipeline_skip_if_already_contacted(self, client, db):
         resp = client.post(
