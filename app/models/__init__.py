@@ -18,6 +18,7 @@ from app.models.lead import CompanyLead
 from app.models.lead_source import LeadSource
 from app.models.outreach_event import OutreachEvent
 from app.models.outreach_message import OutreachMessage
+from app.models.reply_analysis import ReplyAnalysis
 from app.models.reply_inbox import ReplyInbox
 from app.models.search_result import SearchResult
 from app.models.unsubscribe import Unsubscribe
@@ -41,5 +42,6 @@ __all__ = [
     "EmailVerification",
     "EmailTracking",
     "ReplyInbox",
+    "ReplyAnalysis",
     "Unsubscribe",
 ]

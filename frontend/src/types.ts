@@ -93,6 +93,19 @@ export interface LeadTimeline {
   events: LeadTimelineEvent[];
 }
 
+// Phase 6 Stage 2: AI reply intelligence (classified inbound customer reply).
+export interface ReplyAnalysis {
+  id: number;
+  lead_id: number;
+  message_id?: number | null;
+  reply_text: string;
+  intent: string;
+  confidence_score?: number | null;
+  recommended_action?: string | null;
+  applied_actions?: string[];
+  created_at?: string | null;
+}
+
 export interface DiscoveryResult {
   id: number;
   company_name: string;

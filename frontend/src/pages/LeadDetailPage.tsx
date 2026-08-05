@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import type { CompanyLead, LeadTimeline, OutreachMessage } from "../types";
+import type {
+  CompanyLead,
+  LeadTimeline,
+  OutreachMessage,
+  ReplyAnalysis,
+} from "../types";
 import {
   priorityColor,
   priorityBadge,
@@ -24,6 +29,29 @@ const EVENT_LABELS: Record<string, string> = {
   bounced: "Bounced",
 };
 
+// Phase 6 Stage 2: reply intent display mapping.
+const INTENT_LABELS: Record<string, string> = {
+  interested: "Interested",
+  rfq_request: "RFQ Request",
+  technical_question: "Technical Question",
+  price_request: "Price Request",
+  supplier_existing: "Existing Supplier",
+  not_interested: "Not Interested",
+  out_of_office: "Out of Office",
+  unknown: "Unknown",
+};
+
+const INTENT_COLORS: Record<string, string> = {
+  interested: "#16a34a",
+  rfq_request: "#9333ea",
+  technical_question: "#2563eb",
+  price_request: "#d97706",
+  supplier_existing: "#64748b",
+  not_interested: "#dc2626",
+  out_of_office: "#94a3b8",
+  unknown: "#6b7280",
+};
+
 export default function LeadDetailPage() {
   const { id } = useParams();
   const leadId = Number(id);
@@ -32,6 +60,8 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<CompanyLead | null>(null);
   const [messages, setMessages] = useState<OutreachMessage[]>([]);
   const [timeline, setTimeline] = useState<LeadTimeline | null>(null);
+  const [replyAnalyses, setReplyAnalyses] = useState<ReplyAnalysis[]>([]);
+  const [replyText, setReplyText] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -41,14 +71,16 @@ export default function LeadDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [l, msgs, tl] = await Promise.all([
+      const [l, msgs, tl, analyses] = await Promise.all([
         api.getLead(leadId),
         api.listLeadMessages(leadId).catch(() => []),
         api.getLeadTimeline(leadId).catch(() => null),
+        api.listReplyAnalyses(leadId).catch(() => []),
       ]);
       setLead(l);
       setMessages(msgs);
       setTimeline(tl);
+      setReplyAnalyses(analyses);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -65,6 +97,22 @@ export default function LeadDetailPage() {
     setError(null);
     try {
       await fn();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const analyzeReply = async () => {
+    const text = replyText.trim();
+    if (!text) return;
+    setBusy("reply");
+    setError(null);
+    try {
+      await api.analyzeReply(leadId, text);
+      setReplyText("");
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -243,6 +291,83 @@ export default function LeadDetailPage() {
             current stage: <strong>{lead.lead_status}</strong>
           </span>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Reply Intelligence</h2>
+        <div className="toolbar" style={{ alignItems: "flex-start" }}>
+          <textarea
+            rows={3}
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            placeholder="Paste a customer reply to auto-classify intent and update the CRM…"
+            style={{ flex: 1, minWidth: 280 }}
+          />
+          <button disabled={!!busy || !replyText.trim()} onClick={analyzeReply}>
+            {busy === "reply" ? "Analyzing…" : "Analyze Reply"}
+          </button>
+        </div>
+
+        {replyAnalyses.length === 0 ? (
+          <div className="muted" style={{ marginTop: 10 }}>
+            No replies analyzed yet — paste a customer reply above.
+          </div>
+        ) : (
+          <>
+            {(() => {
+              const latest = replyAnalyses[0];
+              return (
+                <div
+                  className="card"
+                  style={{
+                    background: "var(--panel-2)",
+                    marginTop: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span
+                      className="badge"
+                      style={{
+                        background: INTENT_COLORS[latest.intent] ?? "#6b7280",
+                      }}
+                    >
+                      {INTENT_LABELS[latest.intent] ?? latest.intent}
+                    </span>
+                    <strong>{latest.confidence_score ?? 0}% confidence</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {formatDate(latest.created_at)}
+                    </span>
+                  </div>
+                  <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+                    Recommended: {latest.recommended_action ?? "—"}
+                  </div>
+                  {latest.applied_actions && latest.applied_actions.length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      {latest.applied_actions.map((a) => (
+                        <span key={a} className="chip">
+                          ✓ {a}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <pre style={{ marginTop: 8, fontSize: 12 }}>{latest.reply_text}</pre>
+                </div>
+              );
+            })()}
+            {replyAnalyses.length > 1 && (
+              <div className="muted" style={{ fontSize: 12 }}>
+                Earlier analyses:{" "}
+                {replyAnalyses.slice(1).map((a) => (
+                  <span key={a.id} className="chip">
+                    {INTENT_LABELS[a.intent] ?? a.intent} (
+                    {a.confidence_score ?? 0}%)
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="card">

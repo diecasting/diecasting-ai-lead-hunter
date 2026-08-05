@@ -14,6 +14,7 @@ import type {
   OutreachFollowUp,
   OutreachMessage,
   RankingResponse,
+  ReplyAnalysis,
   SendDraftResponse,
 } from "./types";
 
@@ -250,4 +251,15 @@ export const api = {
       skipped_no_recipient: number;
       send_failed: number;
     }>("POST", "/outreach/followups/process"),
+
+  // ---- Reply intelligence (Phase 6 Stage 2) ------------------------------
+  analyzeReply: (leadId: number, replyText: string, messageId?: number) =>
+    request<ReplyAnalysis>("POST", "/outreach/replies/analyze", {
+      lead_id: leadId,
+      message_id: messageId,
+      reply_text: replyText,
+    }),
+
+  listReplyAnalyses: (leadId: number) =>
+    request<ReplyAnalysis[]>("GET", `/outreach/leads/${leadId}/reply-analysis`),
 };

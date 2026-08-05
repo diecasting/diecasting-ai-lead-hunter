@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.crud import leads as leads_crud
@@ -378,3 +378,94 @@ def process_due_followups_now(db: Session = Depends(get_db)):
     from app.outreach.followup import scheduler as followup_scheduler
 
     return followup_scheduler.process_due_followups(db)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 Stage 2: AI Reply Intelligence
+# ---------------------------------------------------------------------------
+class ReplyAnalyzeRequest(BaseModel):
+    """Payload for classifying an inbound customer reply."""
+
+    lead_id: int
+    message_id: Optional[int] = None
+    reply_text: str = Field(..., min_length=1, description="The customer's reply body")
+
+
+class ReplyAnalysisRead(BaseModel):
+    """A classified reply with the CRM actions that were applied."""
+
+    id: int
+    lead_id: int
+    message_id: Optional[int] = None
+    reply_text: str
+    intent: str
+    confidence_score: Optional[float] = None
+    recommended_action: Optional[str] = None
+    applied_actions: List[str] = []
+    created_at: Optional[datetime] = None
+
+
+def _reply_analysis_to_read(a, actions: Optional[List[str]] = None) -> ReplyAnalysisRead:
+    return ReplyAnalysisRead(
+        id=a.id,
+        lead_id=a.lead_id,
+        message_id=a.message_id,
+        reply_text=a.reply_text,
+        intent=a.intent,
+        confidence_score=a.confidence_score,
+        recommended_action=a.recommended_action,
+        applied_actions=actions or [],
+        created_at=a.created_at,
+    )
+
+
+@router.post("/replies/analyze", response_model=ReplyAnalysisRead)
+def analyze_reply(
+    payload: ReplyAnalyzeRequest,
+    db: Session = Depends(get_db),
+):
+    """Classify a customer reply and apply the intent-driven CRM automation.
+
+    Intent rules (Phase 6 Stage 2):
+      * ``rfq_request``     → lead status → ``rfq``
+      * ``interested``      → lead status → ``qualified``
+      * ``not_interested``  → stop follow-ups + mark do-not-contact
+      * ``supplier_existing``→ stop the follow-up sequence
+
+    Returns the analysis (intent / confidence / recommended_action) plus the
+    list of CRM actions that were applied.
+    """
+    from app.outreach import reply_ai
+
+    lead = leads_crud.get(db, payload.lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if payload.message_id is not None:
+        msg = outreach_crud.get(db, payload.message_id)
+        if msg is None or msg.lead_id != lead.id:
+            raise HTTPException(
+                status_code=404, detail="Message not found for this lead"
+            )
+
+    analysis, actions = reply_ai.analyze_reply(
+        db,
+        lead,
+        reply_text=payload.reply_text,
+        message_id=payload.message_id,
+    )
+    return _reply_analysis_to_read(analysis, actions)
+
+
+@router.get("/leads/{lead_id}/reply-analysis", response_model=List[ReplyAnalysisRead])
+def list_reply_analyses(
+    lead_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return all reply analyses for a lead, newest first."""
+    from app.outreach import reply_ai
+
+    lead = leads_crud.get(db, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    rows = reply_ai.list_analyses(db, lead_id)
+    return [_reply_analysis_to_read(a) for a in rows]
