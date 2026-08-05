@@ -27,6 +27,8 @@ class OutreachMessageRead(BaseModel):
     html_body: Optional[str] = None
     quality_score: Optional[int] = None
     quality_gate_status: Optional[str] = None
+    recipient_name: Optional[str] = None
+    recipient_email: Optional[str] = None
     created_at: datetime
 
 

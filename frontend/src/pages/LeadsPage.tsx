@@ -96,6 +96,7 @@ export default function LeadsPage() {
               <th>Industry</th>
               <th>Country</th>
               <th>Source</th>
+              <th>Contact</th>
               <th>Priority</th>
               <th>Lead Score</th>
               <th>Sales Priority</th>
@@ -121,6 +122,21 @@ export default function LeadsPage() {
                   <span className={`badge badge-source badge-${l.lead_source ?? "import"}`}>
                     {l.lead_source ?? "import"}
                   </span>
+                </td>
+                <td>
+                  {l.contact_name || l.contact_email ? (
+                    <span
+                      className="badge badge-contact-has"
+                      title={
+                        [l.contact_name, l.contact_email].filter(Boolean).join(" · ") ||
+                        undefined
+                      }
+                    >
+                      Has Contact
+                    </span>
+                  ) : (
+                    <span className="badge badge-contact-missing">Missing Contact</span>
+                  )}
                 </td>
                 <td>
                   <span
@@ -162,7 +178,7 @@ export default function LeadsPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="muted">
+                <td colSpan={11} className="muted">
                   No leads match.
                 </td>
               </tr>

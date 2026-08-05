@@ -19,6 +19,8 @@ def create(
     followup_seq: int = 0,
     quality_score: Optional[int] = None,
     quality_gate_status: Optional[str] = None,
+    recipient_name: Optional[str] = None,
+    recipient_email: Optional[str] = None,
 ) -> OutreachMessage:
     obj = OutreachMessage(
         lead_id=lead_id,
@@ -30,6 +32,8 @@ def create(
         followup_seq=followup_seq,
         quality_score=quality_score,
         quality_gate_status=quality_gate_status,
+        recipient_name=recipient_name,
+        recipient_email=recipient_email,
     )
     db.add(obj)
     db.commit()

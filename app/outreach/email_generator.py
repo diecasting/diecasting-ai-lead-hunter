@@ -129,9 +129,11 @@ def _fill_template(template_md: str, variables: Dict[str, str]) -> Dict[str, str
         value_prop = value_prop.replace(placeholder, str(val))
         cta = cta.replace(placeholder, str(val))
 
-    # Build a personalised opening
+    # Build a personalised opening: contact-aware greeting (first name when
+    # known, otherwise the Purchasing Manager fallback) + company framing.
     company = variables.get("company", "your company")
-    opening = f"Dear {company} Team,\n\nI hope this message finds you well. I am reaching out because we have identified {company} as a strong potential partner for our precision die casting and CNC machining services."
+    greeting = variables.get("greeting") or "Dear Purchasing Manager,"
+    opening = f"{greeting}\n\nI hope this message finds you well. I am reaching out because we have identified {company} as a strong potential partner for our precision die casting and CNC machining services."
 
     # Build body from capabilities + value proposition
     body_parts = []
@@ -150,12 +152,29 @@ def _fill_template(template_md: str, variables: Dict[str, str]) -> Dict[str, str
     }
 
 
+def _build_greeting(context) -> str:
+    """Build the personalised greeting line (Phase 4 Stage 4).
+
+    When a contact name is known the email opens with ``Dear {first_name},``
+    (contact-aware outreach); otherwise it falls back to the fixed
+    ``Dear Purchasing Manager,`` line.
+    """
+    name = (getattr(context, "contact_name", None) or "").strip()
+    if name:
+        first_name = name.split()[0].strip()
+        if first_name:
+            return f"Dear {first_name},"
+    return "Dear Purchasing Manager,"
+
+
 def _context_variables(context) -> Dict[str, str]:
     """Build the template variable dict from a CustomerContext.
 
     Surfaces company-specific signals (materials, process, procurement type,
     PDF-derived intelligence) so the rendered copy reads personalised rather
-    than boilerplate.
+    than boilerplate. ``contact_name`` / ``first_name`` / ``contact_email``
+    are exposed so templates may reference them directly, and ``greeting``
+    carries the pre-rendered personalised opening line.
     """
     ctx = context
     # Company-specific signal line (procurement + pdf intelligence).
@@ -170,6 +189,9 @@ def _context_variables(context) -> Dict[str, str]:
         signals.append(f"documents: {', '.join(ctx.pdf_types)}")
     company_signals = "; ".join(signals)
 
+    contact_name = (getattr(ctx, "contact_name", None) or "").strip()
+    first_name = contact_name.split()[0] if contact_name else ""
+
     return {
         "company": ctx.company or "your company",
         "industry": ctx.industry or "",
@@ -179,6 +201,10 @@ def _context_variables(context) -> Dict[str, str]:
         "materials": ctx.materials or "",
         "manufacturing_process": ctx.manufacturing_process or "",
         "contact_role": ctx.contact_role or "",
+        "contact_name": contact_name,
+        "first_name": first_name,
+        "contact_email": (getattr(ctx, "contact_email", None) or "").strip(),
+        "greeting": _build_greeting(ctx),
         "buying_signal": ctx.buying_signal or "",
         "company_signals": company_signals,
         "lead_score": str(ctx.lead_score if ctx.lead_score is not None else ""),
@@ -201,12 +227,13 @@ def _fill_role_template(role_template_md: str, variables: Dict[str, str]) -> Dic
     company = variables.get("company", "your company")
     company_signals = variables.get("company_signals", "")
 
-    # Personalised opening: greet by company + state why we reached this role.
+    # Personalised opening: contact-aware greeting + why we reached this role.
+    greeting = variables.get("greeting") or "Dear Purchasing Manager,"
     role_hint = ""
     if role_context:
         role_hint = " " + role_context.split("\n")[0].strip()
     opening = (
-        f"Dear {company} Team,\n\n"
+        f"{greeting}\n\n"
         f"I'm reaching out to your team because we specialise in precision die "
         f"casting and CNC machining that aligns with {company}'s programs."
     )
@@ -266,6 +293,7 @@ def _openai_email(prompt_data: Dict[str, Any]) -> Dict[str, str]:
             "buying_signal": prompt_data.get("buying_signal", ""),
             "reason": prompt_data.get("reason", ""),
             "contact_role": prompt_data.get("contact_role", ""),
+            "contact_name": prompt_data.get("contact_name", ""),
             "language": prompt_data.get("language", "en"),
             "template_guidance": prompt_data.get("template_guidance", ""),
         },
@@ -282,7 +310,9 @@ def _openai_email(prompt_data: Dict[str, Any]) -> Dict[str, str]:
                 "content": (
                     f"Write a cold outreach email for this B2B die casting prospect. "
                     f"Return a JSON object with keys: subject, opening, body, call_to_action. "
-                    f"The opening should address the company by name. "
+                    f"When a contact name is provided, open with a personal greeting using "
+                    f"the contact's first name (e.g. 'Dear John,'); otherwise address the "
+                    f"company by name. "
                     f"The body should reference their specific products, materials, and "
                     f"manufacturing processes. The call_to_action should propose a concrete "
                     f"next step. Use the template guidance below as a reference for key "
@@ -359,6 +389,8 @@ def generate_email(
             manufacturing_process=mfg_process,
             description=str(lead_intelligence.get("description") or ""),
             contact_role=contact_role,
+            contact_name=str(lead_intelligence.get("contact_name") or ""),
+            contact_email=str(lead_intelligence.get("contact_email") or ""),
             buying_signal=buying_signal,
         )
     else:
@@ -398,6 +430,7 @@ def generate_email(
                 "buying_signal": buying_signal,
                 "reason": reason,
                 "contact_role": contact_role,
+                "contact_name": ctx.contact_name,
                 "language": language,
                 "company_signals": variables.get("company_signals", ""),
                 "template_guidance": role_template_md[:2000],
@@ -435,6 +468,8 @@ def generate_email_from_lead(
         "business_type": lead.business_type or "",
         "country": lead.country or "",
         "description": lead.description or "",
+        "contact_name": getattr(lead, "contact_name", None) or "",
+        "contact_email": getattr(lead, "contact_email", None) or "",
     }
     # Build a full CustomerContext (reads related contacts / documents when db
     # is available) so the email is role- and company-personalised.

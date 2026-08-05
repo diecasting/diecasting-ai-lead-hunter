@@ -50,6 +50,11 @@ class OutreachMessage(Base):
     # derived from quality_score at generation time and overridable by a reviewer.
     quality_gate_status = Column(String(20), nullable=True, index=True)
 
+    # Phase 4 Stage 4: recipient captured at draft time for contact-aware
+    # outreach (personalised greeting + send address).
+    recipient_name = Column(String(255), nullable=True)
+    recipient_email = Column(String(255), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     lead = relationship("CompanyLead", backref="outreach_messages", lazy="selectin")

@@ -422,6 +422,10 @@ def generate_email(
         status="draft",
         quality_score=quality_score,
         quality_gate_status=gate_status,
+        # Phase 4 Stage 4: carry the lead's contact info onto the draft so the
+        # dashboard can show who the email is addressed to and where to send it.
+        recipient_name=(lead.contact_name or "").strip() or None,
+        recipient_email=(lead.contact_email or "").strip() or None,
     )
     return msg
 

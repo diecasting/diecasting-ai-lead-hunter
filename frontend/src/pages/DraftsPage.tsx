@@ -115,6 +115,7 @@ export default function DraftsPage() {
               <th>ID</th>
               <th>Lead</th>
               <th>Subject</th>
+              <th>Recipient</th>
               <th>Role</th>
               <th>Status</th>
               <th>Quality</th>
@@ -136,6 +137,16 @@ export default function DraftsPage() {
                   </a>
                 </td>
                 <td>{d.subject}</td>
+                <td>
+                  {d.recipient_name || d.recipient_email ? (
+                    <span title={d.recipient_email ?? undefined}>
+                      {d.recipient_name ?? "—"}
+                      {d.recipient_email ? ` <${d.recipient_email}>` : ""}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td>{d.contact_role ?? "—"}</td>
                 <td>
                   <span
@@ -207,6 +218,23 @@ export default function DraftsPage() {
               {selected.quality_score != null ? `${selected.quality_score}/100` : "—"} ·{" "}
               gate: {selected.quality_gate_status ?? "unscored"} ·{" "}
               {formatDate(selected.created_at)}
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+              Recipient:{" "}
+              {selected.recipient_name || selected.recipient_email ? (
+                <>
+                  <b>{selected.recipient_name ?? "—"}</b>
+                  {selected.recipient_email ? (
+                    <>
+                      {" "}
+                      &lt;<a href={`mailto:${selected.recipient_email}`}>{selected.recipient_email}</a>
+                      &gt;
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                "—"
+              )}
             </div>
             <pre style={{ maxHeight: 420, overflowY: "auto" }}>{selected.body}</pre>
             <div className="toolbar" style={{ justifyContent: "flex-end", marginTop: 14 }}>

@@ -196,6 +196,14 @@ tr:hover td {
   color: #fff;
 }
 
+.badge-contact-has {
+  background: #16a34a;
+}
+
+.badge-contact-missing {
+  background: #9ca3af;
+}
+
 /* Phase 4 Stage 3.5: import preview + lead source provenance badges */
 .badge-valid {
   background: var(--ok, #2ea043);

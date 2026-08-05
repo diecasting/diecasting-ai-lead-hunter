@@ -51,6 +51,7 @@ class CustomerContext:
     # --- Contact / role ---------------------------------------------------
     contact_role: str = ""
     contact_name: str = ""
+    contact_email: str = ""
 
     # --- Lead score (Stage 3) --------------------------------------------
     lead_score: Optional[int] = None
@@ -151,6 +152,8 @@ def build_context_from_lead(lead, *, db=None) -> CustomerContext:
         pdf_types=pdf_types,
         pdf_intelligence=pdf_intel_text.strip(),
         contact_role=role,
+        contact_name=getattr(lead, "contact_name", None) or "",
+        contact_email=getattr(lead, "contact_email", None) or "",
         buying_signal=lead.buying_signal or "",
         lead_score=lead_score,
         priority=priority or "",
@@ -172,6 +175,7 @@ def build_context(
     pdf_intelligence: str = "",
     contact_role: str = "",
     contact_name: str = "",
+    contact_email: str = "",
     lead_score: Optional[int] = None,
     priority: str = "",
     buying_signal: str = "",
@@ -194,6 +198,7 @@ def build_context(
         pdf_intelligence=pdf_intelligence,
         contact_role=contact_role,
         contact_name=contact_name,
+        contact_email=contact_email,
         lead_score=lead_score,
         priority=priority,
         buying_signal=buying_signal,
