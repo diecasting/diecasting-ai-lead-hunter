@@ -72,3 +72,17 @@ export interface RankingResponse {
 }
 
 export type Priority = "HIGH" | "MEDIUM" | "LOW" | null | undefined;
+
+export interface ImportRowError {
+  row: number;
+  company?: string | null;
+  reason: string;
+}
+
+export interface LeadImportResult {
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  errors: ImportRowError[];
+}

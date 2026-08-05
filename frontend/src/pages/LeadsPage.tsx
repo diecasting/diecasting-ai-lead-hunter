@@ -4,6 +4,7 @@ import { api } from "../api";
 import type { CompanyLead } from "../types";
 import { priorityColor, priorityBadge, scoreColor } from "../utils";
 import LeadFormModal from "../components/LeadFormModal";
+import ImportLeadsModal from "../components/ImportLeadsModal";
 
 export default function LeadsPage() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export default function LeadsPage() {
   const [priority, setPriority] = useState("");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +78,7 @@ export default function LeadsPage() {
           <option value="LOW">LOW</option>
         </select>
         <button onClick={() => setShowForm(true)}>+ New Lead</button>
+        <button onClick={() => setShowImport(true)}>⤓ Import CSV</button>
         <button className="secondary" onClick={load}>
           Refresh
         </button>
@@ -168,6 +171,16 @@ export default function LeadsPage() {
           onCreated={(l) => {
             setShowForm(false);
             navigate(`/leads/${l.id}`);
+          }}
+        />
+      )}
+
+      {showImport && (
+        <ImportLeadsModal
+          onClose={() => setShowImport(false)}
+          onDone={() => {
+            setShowImport(false);
+            load();
           }}
         />
       )}

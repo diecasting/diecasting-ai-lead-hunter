@@ -3,6 +3,7 @@
 // VITE_API_BASE to override (e.g. a deployed backend URL) at build time.
 import type {
   CompanyLead,
+  LeadImportResult,
   OutreachMessage,
   RankingResponse,
 } from "./types";
@@ -66,6 +67,24 @@ export const api = {
     request<CompanyLead>("PATCH", `/leads/${id}`, payload),
 
   deleteLead: (id: number) => request<void>("DELETE", `/leads/${id}`),
+
+  importLeads: async (file: File): Promise<LeadImportResult> => {
+    const url = new URL(`${BASE}/leads/import`, window.location.origin);
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(url.toString(), { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const err = await res.json();
+        detail = err.detail ?? detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(`Import failed (${res.status}): ${detail}`);
+    }
+    return (await res.json()) as LeadImportResult;
+  },
 
   analyzeLead: (id: number) =>
     request<CompanyLead>("POST", `/leads/${id}/analyze`),

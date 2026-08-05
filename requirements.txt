@@ -28,3 +28,7 @@ apscheduler==3.10.4
 
 # HTTP client (used by TestClient)
 httpx==0.27.2
+
+# Bulk CSV / Excel lead import (Phase 4)
+python-multipart==0.0.32
+openpyxl==3.1.5

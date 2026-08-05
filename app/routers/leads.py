@@ -1,8 +1,10 @@
 """Lead API routes: CRUD plus crawl/ingest, AI-analysis, and search endpoints."""
+import csv as _csv
+import io
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -44,6 +46,177 @@ def create_lead(payload: CompanyLeadCreate, db: Session = Depends(get_db)):
     if payload.website and crud.get_by_website(db, payload.website):
         raise HTTPException(status_code=409, detail="Lead with this website already exists")
     return crud.create(db, obj_in=payload)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Bulk CSV / Excel lead import
+# ---------------------------------------------------------------------------
+# Column-header aliases recognised during import. Keys are normalised
+# (lower-case, spaces/hyphens -> underscores). Values map to model fields.
+_COLUMN_ALIASES = {
+    "company": "name",
+    "company_name": "name",
+    "name": "name",
+    "country": "country",
+    "website": "website",
+    "url": "website",
+    "industry": "industry",
+    "materials": "materials",
+    "material": "materials",
+    "manufacturing_process": "manufacturing_process",
+    "process": "manufacturing_process",
+    "buying_signal": "buying_signal",
+    "signal": "buying_signal",
+    "contact_role": "contact_role",
+    "role": "contact_role",
+}
+
+
+def _norm_header(h: str) -> str:
+    return (h or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+class ImportRowError(BaseModel):
+    """Per-row failure/skip detail returned to the dashboard."""
+
+    row: int
+    company: Optional[str] = None
+    reason: str
+
+
+class LeadImportResult(BaseModel):
+    """Summary of a bulk import run."""
+
+    total: int = 0
+    imported: int = 0
+    skipped: int = 0
+    failed: int = 0
+    errors: List[ImportRowError] = []
+
+
+def _parse_csv(content: bytes) -> List[dict]:
+    text = content.decode("utf-8-sig", errors="replace")
+    reader = _csv.DictReader(io.StringIO(text))
+    fieldnames = reader.fieldnames or []
+    norm_map = {
+        orig: _COLUMN_ALIASES.get(_norm_header(orig), _norm_header(orig))
+        for orig in fieldnames
+    }
+    return [{norm_map[orig]: (r.get(orig) or "").strip() for orig in fieldnames} for r in reader]
+
+
+def _parse_xlsx(content: bytes) -> List[dict]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    ws = wb.active
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        header_cells = next(rows_iter)
+    except StopIteration:
+        return []
+    fieldnames = [str(c) if c is not None else "" for c in header_cells]
+    norm_map = {
+        orig: _COLUMN_ALIASES.get(_norm_header(orig), _norm_header(orig))
+        for orig in fieldnames
+    }
+    out: List[dict] = []
+    for r in rows_iter:
+        out.append(
+            {
+                norm_map[orig]: ("" if val is None else str(val)).strip()
+                for orig, val in zip(fieldnames, r)
+            }
+        )
+    return out
+
+
+@router.post("/import", response_model=LeadImportResult, status_code=200)
+async def import_leads(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Bulk-import leads from a CSV or Excel (.xlsx) file.
+
+    Expected columns (case/space/hyphen insensitive; aliases allowed):
+    company, country, website, industry, materials, manufacturing_process,
+    buying_signal, contact_role. ``company`` maps to the lead ``name`` and is
+    required. Duplicate companies (by name, case-insensitive) and duplicate
+    websites are skipped. Rows missing a company name (or that fail to persist)
+    are counted as failed with a reason.
+    """
+    content = await file.read()
+    filename = (file.filename or "").lower()
+    try:
+        if filename.endswith((".xlsx", ".xlsm")):
+            rows = _parse_xlsx(content)
+        else:
+            rows = _parse_csv(content)
+    except Exception as exc:  # pragma: no cover - parsing edge cases
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {exc}")
+
+    existing_names = {
+        row[0].lower()
+        for row in db.query(CompanyLead.name)
+        .filter(CompanyLead.name.isnot(None))
+        .all()
+    }
+    existing_websites = {
+        row[0].lower()
+        for row in db.query(CompanyLead.website)
+        .filter(CompanyLead.website.isnot(None))
+        .all()
+    }
+    batch_names: set = set()
+
+    result = LeadImportResult()
+    for idx, row in enumerate(rows, start=2):  # row 1 is the header
+        result.total += 1
+        name = (row.get("name") or "").strip()
+        if not name:
+            result.failed += 1
+            result.errors.append(
+                ImportRowError(row=idx, company=None, reason="missing company name")
+            )
+            continue
+        if name.lower() in existing_names or name.lower() in batch_names:
+            result.skipped += 1
+            result.errors.append(
+                ImportRowError(row=idx, company=name, reason="duplicate company")
+            )
+            continue
+        website = (row.get("website") or "").strip() or None
+        if website and website.lower() in existing_websites:
+            result.skipped += 1
+            result.errors.append(
+                ImportRowError(row=idx, company=name, reason="duplicate website")
+            )
+            continue
+        data = {
+            "name": name,
+            "country": row.get("country") or None,
+            "website": website,
+            "industry": row.get("industry") or None,
+            "materials": row.get("materials") or None,
+            "manufacturing_process": row.get("manufacturing_process") or None,
+            "buying_signal": row.get("buying_signal") or None,
+            "contact_role": row.get("contact_role") or None,
+            "source": "csv_import",
+        }
+        try:
+            crud.create(db, **data)
+            result.imported += 1
+            batch_names.add(name.lower())
+            if website:
+                existing_websites.add(website.lower())
+        except Exception as exc:  # pragma: no cover - DB edge cases
+            db.rollback()
+            result.failed += 1
+            result.errors.append(
+                ImportRowError(row=idx, company=name, reason=f"db error: {exc}")
+            )
+
+    return result
 
 
 @router.get("/high-priority", response_model=List[CompanyLeadRead])
