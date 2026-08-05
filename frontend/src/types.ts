@@ -61,6 +61,7 @@ export interface OutreachMessage {
   open_count: number;
   click_count: number;
   quality_score?: number | null;
+  quality_gate_status?: string | null;
   created_at: string;
 }
 

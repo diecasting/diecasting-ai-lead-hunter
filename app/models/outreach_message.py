@@ -46,6 +46,10 @@ class OutreachMessage(Base):
     # Phase 4 Stage 2: email quality score (0-100) computed at generation time.
     quality_score = Column(Integer, nullable=True, index=True)
 
+    # Phase 4 Stage 3: draft quality auto-gate (ready | review | blocked),
+    # derived from quality_score at generation time and overridable by a reviewer.
+    quality_gate_status = Column(String(20), nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     lead = relationship("CompanyLead", backref="outreach_messages", lazy="selectin")

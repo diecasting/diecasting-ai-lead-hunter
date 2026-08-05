@@ -516,6 +516,17 @@ def generate_email(
         # Quality scoring is best-effort; never block draft creation.
         quality_score = None
 
+    # Phase 4 Stage 3: classify the quality score into a gate decision
+    # (ready | review | blocked) stored on the draft so the CRM can filter /
+    # block low-quality drafts before a human reviews them.
+    gate_status = None
+    try:
+        from app.outreach.draft_quality_gate import classify_quality_gate
+
+        gate_status = classify_quality_gate(quality_score)
+    except Exception:
+        gate_status = None
+
     msg = outreach_crud.create(
         db,
         lead_id=lead.id,
@@ -524,6 +535,7 @@ def generate_email(
         contact_role=result.get("contact_role"),
         status="draft",
         quality_score=quality_score,
+        quality_gate_status=gate_status,
     )
     return msg
 

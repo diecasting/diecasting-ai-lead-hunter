@@ -102,15 +102,22 @@ export const api = {
   generateEmail: (leadId: number) =>
     request<OutreachMessage>("POST", `/leads/${leadId}/generate-email`),
 
-  listDrafts: (params?: { skip?: number; limit?: number }) =>
+  listDrafts: (params?: { skip?: number; limit?: number; gate?: string }) =>
     request<OutreachMessage[]>("GET", "/outreach/drafts", undefined, {
       skip: params?.skip,
       limit: params?.limit ?? 100,
+      gate: params?.gate,
     }),
 
   listLeadMessages: (leadId: number, status?: string) =>
     request<OutreachMessage[]>("GET", `/outreach/leads/${leadId}/messages`, undefined, {
       status,
+    }),
+
+  // Reviewer override of a draft's quality gate (release a review/blocked draft).
+  reviewDraftGate: (messageId: number, gateStatus: string) =>
+    request<OutreachMessage>("PATCH", `/outreach/drafts/${messageId}/gate`, {
+      gate_status: gateStatus,
     }),
 
   // ---- CRM / Quality ----------------------------------------------------

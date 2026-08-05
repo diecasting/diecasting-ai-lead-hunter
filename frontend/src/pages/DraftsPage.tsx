@@ -11,38 +11,91 @@ const STATUS_COLORS: Record<string, string> = {
   replied: "#16a34a",
 };
 
+const GATE_COLORS: Record<string, string> = {
+  ready: "#16a34a",
+  review: "#d97706",
+  blocked: "#dc2626",
+};
+
+const GATE_LABELS: Record<string, string> = {
+  ready: "Ready",
+  review: "Needs review",
+  blocked: "Blocked",
+};
+
+type GateFilter = "all" | "ready" | "review" | "blocked";
+
+const GATE_FILTERS: { key: GateFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "ready", label: "Ready" },
+  { key: "review", label: "Needs review" },
+  { key: "blocked", label: "Blocked" },
+];
+
 export default function DraftsPage() {
   const navigate = useNavigate();
   const [drafts, setDrafts] = useState<OutreachMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<OutreachMessage | null>(null);
+  const [gateFilter, setGateFilter] = useState<GateFilter>("all");
+  const [releasing, setReleasing] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.listDrafts({ limit: 100 });
+      const data = await api.listDrafts({
+        limit: 100,
+        gate: gateFilter === "all" ? undefined : gateFilter,
+      });
       setDrafts(data);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [gateFilter]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  const release = useCallback(
+    async (id: number) => {
+      setReleasing(id);
+      try {
+        await api.reviewDraftGate(id, "ready");
+        await load();
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setReleasing(null);
+      }
+    },
+    [load],
+  );
+
   return (
     <div>
       <h1>Outreach Drafts</h1>
       <div className="sub">
-        Review generated outreach emails awaiting approval. Click a draft to read the full body.
+        Review generated outreach emails awaiting approval. Drafts below the quality
+        gate are flagged for review before they can be released.
       </div>
 
       <div className="toolbar">
+        <div className="chip-group">
+          {GATE_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              className={gateFilter === f.key ? "chip button active" : "chip button"}
+              onClick={() => setGateFilter(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
         <button className="secondary" onClick={load}>
           Refresh
         </button>
@@ -55,7 +108,7 @@ export default function DraftsPage() {
         <div className="muted">No drafts. Generate an email from a lead’s detail page.</div>
       )}
 
-      {!loading && (
+      {!loading && drafts.length > 0 && (
         <table>
           <thead>
             <tr>
@@ -65,6 +118,7 @@ export default function DraftsPage() {
               <th>Role</th>
               <th>Status</th>
               <th>Quality</th>
+              <th>Gate</th>
               <th>Created</th>
               <th></th>
             </tr>
@@ -104,11 +158,38 @@ export default function DraftsPage() {
                     "—"
                   )}
                 </td>
+                <td>
+                  {d.quality_gate_status ? (
+                    <span
+                      className="badge"
+                      style={{
+                        background: GATE_COLORS[d.quality_gate_status] ?? "#6b7280",
+                      }}
+                      title="Quality gate: ready = releaseable, review/blocked = needs review"
+                    >
+                      {GATE_LABELS[d.quality_gate_status] ?? d.quality_gate_status}
+                    </span>
+                  ) : (
+                    <span className="badge" style={{ background: "#9ca3af" }}>
+                      Unscored
+                    </span>
+                  )}
+                </td>
                 <td>{formatDate(d.created_at)}</td>
                 <td>
-                  <button className="secondary" onClick={() => setSelected(d)}>
-                    Review
-                  </button>
+                  {d.quality_gate_status && d.quality_gate_status !== "ready" ? (
+                    <button
+                      className="secondary"
+                      disabled={releasing === d.id}
+                      onClick={() => release(d.id)}
+                    >
+                      {releasing === d.id ? "Releasing…" : "Release"}
+                    </button>
+                  ) : (
+                    <button className="secondary" onClick={() => setSelected(d)}>
+                      Review
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -124,6 +205,7 @@ export default function DraftsPage() {
               Draft #{selected.id} · lead #{selected.lead_id} · role:{" "}
               {selected.contact_role ?? "—"} · quality:{" "}
               {selected.quality_score != null ? `${selected.quality_score}/100` : "—"} ·{" "}
+              gate: {selected.quality_gate_status ?? "unscored"} ·{" "}
               {formatDate(selected.created_at)}
             </div>
             <pre style={{ maxHeight: 420, overflowY: "auto" }}>{selected.body}</pre>

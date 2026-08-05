@@ -18,6 +18,7 @@ def create(
     is_followup: bool = False,
     followup_seq: int = 0,
     quality_score: Optional[int] = None,
+    quality_gate_status: Optional[str] = None,
 ) -> OutreachMessage:
     obj = OutreachMessage(
         lead_id=lead_id,
@@ -28,6 +29,7 @@ def create(
         is_followup=is_followup,
         followup_seq=followup_seq,
         quality_score=quality_score,
+        quality_gate_status=quality_gate_status,
     )
     db.add(obj)
     db.commit()
@@ -49,16 +51,28 @@ def get_by_lead(
 
 
 def list_drafts(
-    db: Session, *, skip: int = 0, limit: int = 50
+    db: Session, *, skip: int = 0, limit: int = 50, gate: Optional[str] = None
 ) -> List[OutreachMessage]:
+    q = db.query(OutreachMessage).filter(OutreachMessage.status == "draft")
+    if gate:
+        q = q.filter(OutreachMessage.quality_gate_status == gate)
     return (
-        db.query(OutreachMessage)
-        .filter(OutreachMessage.status == "draft")
-        .order_by(OutreachMessage.id.desc())
+        q.order_by(OutreachMessage.id.desc())
         .offset(skip)
         .limit(limit)
         .all()
     )
+
+
+def set_gate_status(
+    db: Session, obj: OutreachMessage, gate_status: Optional[str]
+) -> OutreachMessage:
+    """Override the quality gate status for a draft (reviewer release)."""
+    obj.quality_gate_status = gate_status
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
 
 
 def list_sent(db: Session, *, lead_id: Optional[int] = None) -> List[OutreachMessage]:

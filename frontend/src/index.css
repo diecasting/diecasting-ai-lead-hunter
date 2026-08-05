@@ -357,6 +357,34 @@ pre {
   color: var(--muted);
 }
 
+.chip-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip.button {
+  cursor: pointer;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  font-family: inherit;
+}
+
+.chip.button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.chip.button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .import-result {
   margin-top: 16px;
   border-top: 1px solid var(--border);

@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class OutreachMessageRead(BaseModel):
@@ -26,6 +26,7 @@ class OutreachMessageRead(BaseModel):
     click_count: int = 0
     html_body: Optional[str] = None
     quality_score: Optional[int] = None
+    quality_gate_status: Optional[str] = None
     created_at: datetime
 
 
@@ -35,3 +36,16 @@ class GenerateEmailRequest(BaseModel):
     industry: Optional[str] = None
     language: str = "en"
     tone: str = "professional"  # professional | friendly | direct
+
+
+class ReviewGateRequest(BaseModel):
+    """Reviewer override of a draft's quality gate status."""
+
+    gate_status: str
+
+    @field_validator("gate_status")
+    @classmethod
+    def _valid_gate(cls, v: str) -> str:
+        if v not in ("ready", "review", "blocked"):
+            raise ValueError("gate_status must be one of: ready, review, blocked")
+        return v
