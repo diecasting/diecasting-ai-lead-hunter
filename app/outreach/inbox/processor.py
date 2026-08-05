@@ -65,7 +65,13 @@ def process_inbox(
         "analyzed": 0,
     }
 
-    fetched = connector.fetch_new_messages()
+    try:
+        fetched = connector.fetch_new_messages()
+    except Exception as exc:
+        # Connector-level failure (e.g. IMAP down / auth error): surface the
+        # error in the summary and stop — existing rows are untouched.
+        summary["error"] = str(exc)
+        return summary
     summary["fetched"] = len(fetched)
     for msg in fetched:
         row, is_new = persist_message(db, msg)

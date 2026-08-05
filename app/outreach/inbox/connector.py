@@ -41,6 +41,14 @@ class EmailInboxConnector(ABC):
     def mark_processed(self, external_id: str) -> None:
         """Mark a fetched message as seen/processed in the mailbox."""
 
+    def test_connection(self) -> dict:
+        """Verify the mailbox connection (connect + authenticate + read).
+
+        Returns a dict with at least ``ok``; providers add their own fields.
+        Read-only — never marks messages as seen.
+        """
+        raise NotImplementedError
+
 
 class MockInboxConnector(EmailInboxConnector):
     """In-memory connector with a shared class-level queue (dry-run / tests)."""
@@ -56,6 +64,15 @@ class MockInboxConnector(EmailInboxConnector):
     def mark_processed(self, external_id: str) -> None:
         if external_id:
             self.processed.append(external_id)
+
+    def test_connection(self) -> dict:
+        return {
+            "ok": True,
+            "provider": "mock",
+            "count": len(self.queue),
+            "latest": [],
+            "message": "Mock inbox (dry-run) — no real IMAP connection.",
+        }
 
 
 class ImapInboxConnector(EmailInboxConnector):
@@ -120,10 +137,64 @@ class ImapInboxConnector(EmailInboxConnector):
             except Exception:
                 pass
 
+    def test_connection(self) -> dict:
+        """Connect + authenticate + select INBOX, count messages and preview
+        the latest 5 (sender / subject). Read-only — nothing is marked seen."""
+        from app.outreach.inbox.parser import parse_email
+
+        conn = None
+        try:
+            conn = self._connect()
+            conn.select(self.folder)
+            typ, data = conn.search(None, "ALL")
+            nums = (data[0] or b"").split()
+            count = len(nums)
+            latest: List[dict] = []
+            for num in nums[-5:]:
+                typ2, mdata = conn.fetch(num, "(RFC822)")
+                raw = b""
+                if mdata and mdata[0]:
+                    raw = mdata[0][1]
+                msg = parse_email(raw, external_id=num.decode())
+                latest.append(
+                    {
+                        "sender_email": msg.sender_email,
+                        "sender_name": msg.sender_name,
+                        "subject": msg.subject,
+                        "received_at": (
+                            msg.received_at.isoformat()
+                            if msg.received_at is not None
+                            else None
+                        ),
+                    }
+                )
+            return {"ok": True, "provider": "imap", "count": count, "latest": latest}
+        except Exception as exc:
+            return {
+                "ok": False,
+                "provider": "imap",
+                "count": 0,
+                "latest": [],
+                "error": str(exc),
+            }
+        finally:
+            if conn is not None:
+                try:
+                    conn.logout()
+                except Exception:
+                    pass
+
+
+def imap_configured() -> bool:
+    """True when a real IMAP mailbox is fully configured (host + creds)."""
+    return bool(
+        settings.imap_host and settings.imap_username and settings.imap_password
+    )
+
 
 def get_inbox_connector() -> EmailInboxConnector:
     """Return the configured connector (IMAP when configured, else mock)."""
-    if settings.imap_host and settings.imap_username and settings.imap_password:
+    if imap_configured():
         return ImapInboxConnector(
             host=settings.imap_host,
             port=settings.imap_port,

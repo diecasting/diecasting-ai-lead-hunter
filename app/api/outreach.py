@@ -566,6 +566,53 @@ def list_unprocessed_inbox(db: Session = Depends(get_db)):
     return [_incoming_to_read(r) for r in rows]
 
 
+@router.get("/inbox/status", response_model=dict)
+def inbox_status(db: Session = Depends(get_db)):
+    """Return the inbox connector configuration + derived stats.
+
+    Never exposes IMAP_PASSWORD. ``configured`` is true only when host +
+    credentials (including password) are set. ``fetched_count`` is the number
+    of emails pulled into the reply inbox so far; ``last_check_at`` is the
+    most recent email fetch time (newest incoming row).
+    """
+    from app.config import settings
+    from app.models.incoming_email import IncomingEmail
+    from app.outreach.inbox.connector import imap_configured
+
+    configured = imap_configured()
+    last = (
+        db.query(IncomingEmail)
+        .order_by(IncomingEmail.created_at.desc(), IncomingEmail.id.desc())
+        .first()
+    )
+    return {
+        "provider": "imap" if configured else "mock",
+        "configured": configured,
+        "server": settings.imap_host or "",
+        "username": settings.imap_username or "",
+        "folder": settings.imap_folder or "INBOX",
+        "use_ssl": settings.imap_use_ssl,
+        "fetched_count": db.query(IncomingEmail).count(),
+        "last_check_at": last.created_at if last is not None else None,
+    }
+
+
+@router.post("/inbox/test", response_model=dict)
+def inbox_test():
+    """Test the IMAP connection: connect + authenticate + read INBOX.
+
+    Returns the connection result, the INBOX message count, and a preview of
+    the latest 5 emails (sender / subject). Read-only — does NOT modify the
+    reply analysis workflow (no DB writes, no \\Seen flags). Without IMAP
+    configuration the mock provider is used (dry-run success).
+    """
+    from app.outreach.inbox.connector import get_inbox_connector, imap_configured
+
+    result = get_inbox_connector().test_connection()
+    result["configured"] = imap_configured()
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Phase 6 Stage 4: SMTP provider status + connectivity test
 # ---------------------------------------------------------------------------

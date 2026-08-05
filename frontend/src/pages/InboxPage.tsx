@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import type { InboxProcessSummary, IncomingEmail } from "../types";
+import type {
+  InboxProcessSummary,
+  InboxStatus,
+  InboxTestResult,
+  IncomingEmail,
+} from "../types";
 import { formatDate } from "../utils";
 
 // Phase 6 Stage 2 reply-intent display mapping (shared look with the lead
@@ -36,16 +41,22 @@ export default function InboxPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InboxProcessSummary | null>(null);
+  const [status, setStatus] = useState<InboxStatus | null>(null);
+  const [testResult, setTestResult] = useState<InboxTestResult | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const rows =
+      const [rows, st] = await Promise.all([
         filter === "unprocessed"
-          ? await api.listUnprocessedInbox()
-          : await api.listInbox({ processed: filter === "processed" ? "true" : undefined });
+          ? api.listUnprocessedInbox()
+          : api.listInbox({ processed: filter === "processed" ? "true" : undefined }),
+        api.getInboxStatus().catch(() => null),
+      ]);
       setEmails(rows);
+      setStatus(st);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -71,6 +82,18 @@ export default function InboxPage() {
     }
   };
 
+  const testConnection = async () => {
+    setTestBusy(true);
+    setError(null);
+    try {
+      setTestResult(await api.testInboxConnection());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTestBusy(false);
+    }
+  };
+
   return (
     <div>
       <h1>Reply Inbox</h1>
@@ -79,6 +102,82 @@ export default function InboxPage() {
         Intelligence Engine (match lead → classify intent → apply CRM actions).
       </div>
       {error && <div className="error">{error}</div>}
+
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0 }}>IMAP Connection</h2>
+          <button className="secondary" disabled={testBusy} onClick={testConnection}>
+            {testBusy ? "Testing…" : "Test IMAP Connection"}
+          </button>
+        </div>
+        {status && (
+          <div className="toolbar" style={{ marginTop: 10, flexWrap: "wrap" }}>
+            <span
+              className="badge"
+              style={{ background: status.configured ? "#16a34a" : "#6b7280" }}
+            >
+              {status.provider} {status.configured ? "· configured" : "· dry-run"}
+            </span>
+            <span className="chip">
+              server: {status.server || "—"}
+              {status.use_ssl ? " (SSL)" : ""}
+            </span>
+            <span className="chip">username: {status.username || "—"}</span>
+            <span className="chip">folder: {status.folder}</span>
+            <span className="chip">
+              fetched emails: <strong>{status.fetched_count}</strong>
+            </span>
+            <span className="chip">
+              last check:{" "}
+              <strong>{status.last_check_at ? formatDate(status.last_check_at) : "—"}</strong>
+            </span>
+          </div>
+        )}
+        {testResult && (
+          <div
+            className="card"
+            style={{
+              background: "var(--panel-2)",
+              marginTop: 10,
+              padding: 12,
+            }}
+          >
+            <div>
+              {testResult.ok ? (
+                <span className="badge" style={{ background: "#16a34a" }}>
+                  connected
+                </span>
+              ) : (
+                <span className="badge" style={{ background: "#dc2626" }}>
+                  failed
+                </span>
+              )}{" "}
+              <strong>
+                {testResult.provider} · {testResult.count} messages
+                {testResult.configured ? "" : " (dry-run)"}
+              </strong>
+              {testResult.error && (
+                <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+                  {testResult.error}
+                </div>
+              )}
+              {testResult.latest && testResult.latest.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {testResult.latest.map((m, i) => (
+                    <div key={i} style={{ fontSize: 12, marginBottom: 4 }}>
+                      <span className="muted">
+                        {m.sender_email ?? m.sender_name ?? "—"}
+                      </span>
+                      {" — "}
+                      {m.subject ?? "(no subject)"}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="card">
         <div className="toolbar">

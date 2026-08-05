@@ -10,6 +10,8 @@ import type {
   FollowUpSequence,
   IncomingEmail,
   InboxProcessSummary,
+  InboxStatus,
+  InboxTestResult,
   LeadImportPreview,
   LeadImportSummary,
   LeadTimeline,
@@ -276,4 +278,10 @@ export const api = {
 
   listUnprocessedInbox: () =>
     request<IncomingEmail[]>("GET", "/outreach/inbox/unprocessed"),
+
+  getInboxStatus: () =>
+    request<InboxStatus>("GET", "/outreach/inbox/status"),
+
+  testInboxConnection: () =>
+    request<InboxTestResult>("POST", "/outreach/inbox/test"),
 };

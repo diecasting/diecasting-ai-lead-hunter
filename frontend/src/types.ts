@@ -220,6 +220,34 @@ export interface InboxProcessSummary {
   analyzed: number;
 }
 
+export interface InboxStatus {
+  provider: "imap" | "mock";
+  configured: boolean;
+  server: string;
+  username: string;
+  folder: string;
+  use_ssl: boolean;
+  fetched_count: number;
+  last_check_at?: string | null;
+}
+
+export interface InboxTestEmail {
+  sender_email?: string | null;
+  sender_name?: string | null;
+  subject?: string | null;
+  received_at?: string | null;
+}
+
+export interface InboxTestResult {
+  ok: boolean;
+  provider: "imap" | "mock";
+  configured: boolean;
+  count: number;
+  latest: InboxTestEmail[];
+  error?: string | null;
+  message?: string | null;
+}
+
 export interface RankingResponse {
   count: number;
   filters: { min_score: number; priority: string | null };

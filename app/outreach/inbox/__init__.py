@@ -11,6 +11,7 @@ from app.outreach.inbox.connector import (
     InboxMessage,
     MockInboxConnector,
     get_inbox_connector,
+    imap_configured,
 )
 from app.outreach.inbox.matcher import match_incoming_email, normalize_subject
 from app.outreach.inbox.parser import parse_email
@@ -22,6 +23,7 @@ __all__ = [
     "MockInboxConnector",
     "InboxMessage",
     "get_inbox_connector",
+    "imap_configured",
     "parse_email",
     "normalize_subject",
     "match_incoming_email",
