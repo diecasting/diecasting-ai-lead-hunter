@@ -15,6 +15,7 @@ import {
   BREAKDOWN_LABELS,
   formatDate,
 } from "../utils";
+import { ValueView } from "../components/ValueView";
 import LeadFormModal from "../components/LeadFormModal";
 
 // Phase 4.6 lead pipeline status set.
@@ -221,7 +222,9 @@ export default function LeadDetailPage() {
                     }}
                   >
                     <span>{BREAKDOWN_LABELS[k] ?? k}</span>
-                    <span>{v ?? "—"}</span>
+                    <span>
+                      <ValueView value={v ?? "—"} />
+                    </span>
                   </div>
                   <div className="bar">
                     <span

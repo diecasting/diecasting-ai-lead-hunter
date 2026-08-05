@@ -28,11 +28,16 @@ export function scoreColor(score: number | null | undefined): string {
   return "#6b7280";
 }
 
-/** Parse the JSON lead_score_breakdown string safely. */
+/** Parse the JSON lead_score_breakdown safely (accepts string or object). */
 export function parseBreakdown(lead: CompanyLead): LeadScoreBreakdown | null {
-  if (!lead.lead_score_breakdown) return null;
+  const raw = lead.lead_score_breakdown;
+  if (!raw) return null;
+  // Defensive: some responses may already deserialise the field to an object.
+  if (typeof raw === "object" && raw !== null) {
+    return raw as LeadScoreBreakdown;
+  }
   try {
-    const parsed = JSON.parse(lead.lead_score_breakdown);
+    const parsed = JSON.parse(raw);
     if (typeof parsed === "object" && parsed !== null) {
       return parsed as LeadScoreBreakdown;
     }
@@ -42,6 +47,31 @@ export function parseBreakdown(lead: CompanyLead): LeadScoreBreakdown | null {
   return null;
 }
 
+/**
+ * Safely render ANY lead-intelligence value as readable text.
+ *
+ * Objects / arrays are flattened to "key: value" pairs (nested values are
+ * themselves formatted) — never blindly JSON.stringified. This is the
+ * regression guard for the "Objects are not valid as a React child" crash:
+ * the score breakdown contains a `weights` sub-object whose keys are
+ * company_fit / procurement_signal / website_intent / contact_quality /
+ * pdf_signal.
+ */
+export function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.map((v) => formatValue(v)).join(" · ");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${k}: ${formatValue(v)}`)
+      .join(" · ");
+  }
+  return String(value);
+}
+
 /** Human-readable breakdown labels. */
 export const BREAKDOWN_LABELS: Record<string, string> = {
   company_fit_score: "Company Fit",
@@ -49,6 +79,7 @@ export const BREAKDOWN_LABELS: Record<string, string> = {
   website_intent_score: "Website Intent",
   contact_quality_score: "Contact Quality",
   pdf_signal_score: "PDF Signal",
+  weights: "Component Weights",
 };
 
 export function formatDate(value?: string | null): string {

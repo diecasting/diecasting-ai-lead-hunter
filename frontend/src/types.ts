@@ -45,7 +45,8 @@ export interface LeadScoreBreakdown {
   website_intent_score?: number;
   contact_quality_score?: number;
   pdf_signal_score?: number;
-  [key: string]: number | undefined;
+  weights?: Record<string, number>;
+  [key: string]: unknown;
 }
 
 export interface OutreachMessage {
