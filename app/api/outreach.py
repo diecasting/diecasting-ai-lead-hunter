@@ -1,4 +1,5 @@
 """Outreach API routes — email generation and draft management."""
+import json
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -123,6 +124,20 @@ def send_draft(
     validation_error = sender.validate_recipient(recipient)
     if validation_error:
         raise HTTPException(status_code=422, detail=validation_error)
+
+    # Phase 6.5: pre-send e-mail verification (syntax + MX + SMTP). Block the
+    # send only when the recipient is provably undeliverable — e.g. a domain
+    # with no MX record (requirement 4) or a syntactically invalid address.
+    # An inconclusive ("unknown") result does NOT block the send.
+    from app.outreach.email_verifier import INVALID
+    from app.outreach.lead_email_verifier import verify_lead_email
+
+    precheck = verify_lead_email(recipient)
+    if precheck.status == INVALID:
+        raise HTTPException(
+            status_code=422,
+            detail=f"email verification blocked send: {precheck.reason}",
+        )
 
     # Advance through the pipeline and deliver.
     outreach_crud.set_send_status(db, msg, "queued")
@@ -694,3 +709,80 @@ def email_test(payload: Optional[EmailTestRequest] = None):
         "sent_at": receipt.sent_at,
         "error": receipt.error,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 6.5: Lead e-mail verification
+# ---------------------------------------------------------------------------
+class LeadEmailVerifyResponse(BaseModel):
+    """Result of verifying a lead's contact e-mail address."""
+
+    lead_id: int
+    email: str
+    email_status: str  # valid | invalid | unknown
+    email_confidence_score: Optional[int]  # 0-100
+    reason: str
+    checks: List[dict]
+
+
+@router.post(
+    "/leads/{lead_id}/verify-email",
+    response_model=LeadEmailVerifyResponse,
+    status_code=200,
+)
+def verify_lead_email_endpoint(lead_id: int, db: Session = Depends(get_db)):
+    """Verify the lead's contact e-mail (syntax + domain MX + SMTP availability)
+
+    Persists the outcome on the lead (``email_status`` / ``email_confidence_score``)
+    and writes an ``EmailVerification`` audit row. This is a read-only check — it
+    never blocks and never sends mail.
+    """
+    from app.crud import email_verifications as ev_crud
+    from app.outreach.confidence import score_email_confidence
+    from app.outreach.lead_email_verifier import verify_lead_email
+
+    lead = leads_crud.get(db, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    email = (lead.contact_email or "").strip()
+    if not email:
+        raise HTTPException(
+            status_code=422, detail="lead has no contact_email to verify"
+        )
+
+    result = verify_lead_email(email)
+    confidence = score_email_confidence(
+        email, result, role=getattr(lead, "contact_role", None)
+    )
+
+    lead.email_status = result.status
+    lead.email_confidence_score = confidence
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+
+    # Best-effort audit trail (do not fail the request if this write errors).
+    try:
+        ev_crud.create(
+            db,
+            email=email,
+            lead_id=lead.id,
+            status=result.status,
+            is_deliverable=result.is_deliverable,
+            reason=result.reason,
+            score=confidence,
+            verifier="lead_email",
+            checks=json.dumps(result.detail),
+        )
+    except Exception:
+        pass
+
+    return LeadEmailVerifyResponse(
+        lead_id=lead.id,
+        email=email,
+        email_status=result.status,
+        email_confidence_score=confidence,
+        reason=result.reason,
+        checks=result.detail.get("checks", []),
+    )

@@ -12,6 +12,7 @@ import type {
   InboxProcessSummary,
   InboxStatus,
   InboxTestResult,
+  LeadEmailVerification,
   LeadImportPreview,
   LeadImportSummary,
   LeadTimeline,
@@ -159,6 +160,13 @@ export const api = {
   // Send an approved (gate=ready) draft through the sending pipeline.
   sendDraft: (messageId: number) =>
     request<SendDraftResponse>("POST", `/outreach/drafts/${messageId}/send`),
+
+  // Phase 6.5: verify a lead's contact e-mail (MX / syntax / SMTP).
+  verifyLeadEmail: (leadId: number) =>
+    request<LeadEmailVerification>(
+      "POST",
+      `/outreach/leads/${leadId}/verify-email`,
+    ),
 
   // ---- CRM / Quality ----------------------------------------------------
   ranking: (params?: { limit?: number; min_score?: number; priority?: string }) =>

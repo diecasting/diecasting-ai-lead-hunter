@@ -55,6 +55,16 @@ class CompanyLead(Base):
 
     # --- AI enrichment -----------------------------------------------------
     ai_score = Column(Float, nullable=True)            # 0-100 fit score
+
+    # Phase 6.5: e-mail verification (MX / syntax / SMTP deliverability).
+    # Status is one of: valid | invalid | unknown. `invalid` (e.g. no MX
+    # record) blocks outreach sends to the contact address.
+    email_status = Column(
+        String(20), nullable=True, default="unknown", server_default="unknown", index=True
+    )
+    email_confidence_score = Column(
+        Integer, nullable=True, index=True
+    )  # 0-100 confidence to deliver
     ai_relevant = Column(Boolean, nullable=True)       # score >= 50
     ai_summary = Column(Text, nullable=True)           # natural-language summary
     ai_signals = Column(Text, nullable=True)           # JSON-encoded list[str]

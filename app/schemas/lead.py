@@ -32,6 +32,9 @@ class CompanyLeadBase(BaseModel):
     manufacturing_process: Optional[str] = None
     buying_signal: Optional[str] = None
     contact_role: Optional[str] = None
+    # Phase 6.5: e-mail verification result (valid | invalid | unknown; 0-100)
+    email_status: Optional[str] = None
+    email_confidence_score: Optional[int] = None
 
 
 class CompanyLeadCreate(CompanyLeadBase):
@@ -61,6 +64,8 @@ class CompanyLeadUpdate(BaseModel):
     lead_score: Optional[int] = None
     lead_score_breakdown: Optional[str] = None
     priority: Optional[str] = None
+    email_status: Optional[str] = None
+    email_confidence_score: Optional[int] = None
 
 
 class CompanyLeadRead(CompanyLeadBase):

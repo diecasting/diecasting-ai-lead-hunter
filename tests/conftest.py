@@ -63,11 +63,20 @@ def client():
     cfg.search_provider = "google"
     cfg.serpapi_key = ""
 
+    # Phase 6.5: isolate the MX resolver so pre-send verification never hits the
+    # real network during tests (deterministic + fast). The verifier unit tests
+    # inject their own resolver / probe, so they are unaffected.
+    import app.outreach.lead_email_verifier as lev_mod
+
+    _saved_resolve_mx = lev_mod.resolve_mx
+    lev_mod.resolve_mx = lambda domain, **kw: ["mx.example.com"]
+
     with TestClient(app) as c:
         yield c
 
     for k, v in _saved.items():
         setattr(cfg, k, v)
+    lev_mod.resolve_mx = _saved_resolve_mx
     app.dependency_overrides.clear()
     db_mod.engine = orig_engine
     db_mod.SessionLocal = orig_session_local

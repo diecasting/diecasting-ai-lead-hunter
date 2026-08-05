@@ -32,11 +32,31 @@ export interface CompanyLead {
   ai_relevant?: boolean | null;
   ai_summary?: string | null;
   ai_signals?: string | null;
+  email_status?: "valid" | "invalid" | "unknown" | null;
+  email_confidence_score?: number | null;
   crawl_status?: string;
   contact_emails?: unknown[] | null;
   pages_crawled?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface LeadEmailVerification {
+  lead_id: number;
+  email: string;
+  email_status: "valid" | "invalid" | "unknown";
+  email_confidence_score: number | null;
+  reason: string;
+  checks: LeadEmailCheck[];
+}
+
+export interface LeadEmailCheck {
+  verifier: string;
+  status: string;
+  reason?: string;
+  mx_records?: string[];
+  mx_host?: string;
+  [key: string]: unknown;
 }
 
 export interface LeadScoreBreakdown {

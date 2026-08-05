@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type {
   CompanyLead,
+  LeadEmailVerification,
   LeadTimeline,
   OutreachMessage,
   ReplyAnalysis,
@@ -53,6 +54,16 @@ const INTENT_COLORS: Record<string, string> = {
   unknown: "#6b7280",
 };
 
+// Phase 6.5: e-mail verification status colours (valid / invalid / unknown).
+const EMAIL_STATUS_COLORS: Record<string, string> = {
+  valid: "#16a34a",
+  invalid: "#dc2626",
+  unknown: "#d97706",
+};
+
+const emailStatusColor = (s?: string | null) =>
+  EMAIL_STATUS_COLORS[s ?? "unknown"] ?? "#6b7280";
+
 export default function LeadDetailPage() {
   const { id } = useParams();
   const leadId = Number(id);
@@ -67,6 +78,8 @@ export default function LeadDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [edit, setEdit] = useState(false);
+  const [verification, setVerification] = useState<LeadEmailVerification | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,6 +132,21 @@ export default function LeadDetailPage() {
       setError((e as Error).message);
     } finally {
       setBusy(null);
+    }
+  };
+
+  const verifyEmail = async () => {
+    if (!lead?.contact_email) return;
+    setVerifying(true);
+    setError(null);
+    try {
+      const res = await api.verifyLeadEmail(leadId);
+      setVerification(res);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -246,6 +274,110 @@ export default function LeadDetailPage() {
             </>
           )}
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Email Verification</h2>
+        {!lead.contact_email ? (
+          <div className="muted">No contact email on this lead to verify.</div>
+        ) : (
+          <>
+            <dl className="kv">
+              <dt>Contact Email</dt>
+              <dd>{lead.contact_email}</dd>
+              <dt>Status</dt>
+              <dd>
+                <span
+                  className="badge"
+                  style={{
+                    background: emailStatusColor(
+                      verification?.email_status ?? lead.email_status,
+                    ),
+                  }}
+                >
+                  {(verification?.email_status ?? lead.email_status ?? "unknown").toUpperCase()}
+                </span>
+                {lead.email_status === "invalid" && (
+                  <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                    sending blocked (no MX / undeliverable)
+                  </span>
+                )}
+              </dd>
+              <dt>Confidence</dt>
+              <dd>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <strong style={{ fontSize: 18 }}>
+                    {verification?.email_confidence_score ??
+                      lead.email_confidence_score ??
+                      "—"}
+                  </strong>
+                  <div className="bar" style={{ width: 140 }}>
+                    <span
+                      style={{
+                        width: `${
+                          verification?.email_confidence_score ??
+                          lead.email_confidence_score ??
+                          0
+                        }%`,
+                        background: scoreColor(
+                          verification?.email_confidence_score ??
+                            lead.email_confidence_score ??
+                            0,
+                        ),
+                      }}
+                    />
+                  </div>
+                </div>
+              </dd>
+            </dl>
+
+            {verification && (
+              <>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {verification.reason}
+                </div>
+                <h2 style={{ marginTop: 14 }}>Checks</h2>
+                {verification.checks.map((c, i) => (
+                  <div key={i} style={{ marginBottom: 6 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 13,
+                      }}
+                    >
+                      <span style={{ textTransform: "capitalize" }}>
+                        {c.verifier}
+                      </span>
+                      <span
+                        className="badge"
+                        style={{
+                          background: emailStatusColor(c.status),
+                          fontSize: 11,
+                        }}
+                      >
+                        {c.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {c.reason}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            <div style={{ marginTop: 14 }}>
+              <button
+                className="secondary"
+                disabled={verifying}
+                onClick={verifyEmail}
+              >
+                {verifying ? "Verifying…" : "Verify email"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="card">
