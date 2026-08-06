@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # Export
     export_dir: str = "data/exports"
 
+    # Phase 7: Quora + SEO Authority Engine
+    quora_export_dir: str = "data/quora_exports"
+    seo_blog_dir: str = "data/seo_blog"
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6

@@ -536,3 +536,104 @@ pre {
 .import-errors li {
   margin-bottom: 3px;
 }
+
+/* ---- Phase 7: Authority Engine ---------------------------------------- */
+.authority h1 {
+  margin-bottom: 4px;
+}
+.authority .muted {
+  margin-top: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0;
+  border-bottom: 1px solid var(--border, #e2e2e2);
+}
+.tab {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted, #666);
+  border-bottom: 2px solid transparent;
+}
+.tab.active {
+  color: var(--accent, #2563eb);
+  border-bottom-color: var(--accent, #2563eb);
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.row input,
+.card input,
+.card textarea {
+  flex: 1 1 160px;
+  padding: 7px 9px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 6px;
+}
+
+.btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn:hover {
+  opacity: 0.9;
+}
+.btn-sm {
+  padding: 4px 9px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+.btn-sm.danger {
+  color: #ef4444;
+  border-color: #fca5a5;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #eee);
+  vertical-align: middle;
+}
+.data-table th {
+  background: #f8f9fb;
+  font-weight: 600;
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.badge-gray { background: #e5e7eb; color: #374151; }
+.badge-blue { background: #dbeafe; color: #1d4ed8; }
+.badge-green { background: #dcfce7; color: #15803d; }
+.badge-amber { background: #fef3c7; color: #b45309; }
+.badge-purple { background: #ede9fe; color: #6d28d9; }
+

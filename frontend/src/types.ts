@@ -307,3 +307,81 @@ export interface LeadImportPreview {
   failed_count: number;
   rows: ImportPreviewRow[];
 }
+
+// Phase 7: Quora + SEO Authority Engine
+export interface QuoraQuestion {
+  id: number;
+  question_text: string;
+  quora_url?: string | null;
+  topic?: string | null;
+  tags?: string | null;
+  source: string;
+  status: string;
+  answer_id?: number | null;
+  answer_count: number;
+  created_at?: string | null;
+}
+
+export interface ContentArticle {
+  id: number;
+  title: string;
+  body_markdown: string;
+  topic?: string | null;
+  tags?: string | null;
+  source: string;
+  created_at?: string | null;
+}
+
+export interface QuoraAnswer {
+  id: number;
+  question_id: number;
+  question_text: string;
+  content_markdown?: string | null;
+  status: string;
+  quality_score?: number | null;
+  source_type: string;
+  used_content_ids?: string | null;
+  created_at?: string | null;
+}
+
+export interface BlogPost {
+  id: number;
+  title: string;
+  slug?: string | null;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  keywords?: string | null;
+  body_markdown?: string | null;
+  source_type: string;
+  source_id?: number | null;
+  status: string;
+  created_at?: string | null;
+}
+
+export interface ExportResult {
+  path: string;
+  filename: string;
+  markdown: string;
+}
+
+export interface DiscoverResponse {
+  keyword: string;
+  discovered: number;
+  created: number;
+  questions: QuoraQuestion[];
+}
+
+export const QUESTION_STATUSES = [
+  "new",
+  "researched",
+  "drafted",
+  "answered",
+  "published",
+] as const;
+
+export const ANSWER_STATUSES = [
+  "draft",
+  "review",
+  "published",
+  "exported",
+] as const;

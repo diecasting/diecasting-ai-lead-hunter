@@ -29,6 +29,9 @@ export default function App() {
         <NavLink to="/quality" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           Quality & Ranking
         </NavLink>
+        <NavLink to="/authority" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
+          Authority Engine
+        </NavLink>
       </nav>
       <main className="content">
         <Outlet />

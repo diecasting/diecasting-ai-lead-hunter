@@ -10,6 +10,7 @@ from app.api import crawl as crawl_router
 from app.api import discovery as discovery_router
 from app.api import export as export_router
 from app.api import outreach as outreach_router
+from app.api import quora as quora_router
 from app.api import search as search_router
 from app.config import settings
 from app.database import Base, engine
@@ -46,6 +47,8 @@ app.include_router(outreach_router.router)
 app.include_router(crm_router.router)
 app.include_router(crm_models_router.router)
 app.include_router(discovery_router.router)
+app.include_router(quora_router.quora_router)
+app.include_router(quora_router.seo_router)
 
 
 @app.get("/health", tags=["health"])

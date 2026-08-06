@@ -2,11 +2,15 @@
 // proxied to the FastAPI backend by Vite (see vite.config.ts). Set
 // VITE_API_BASE to override (e.g. a deployed backend URL) at build time.
 import type {
+  BlogPost,
   CompanyLead,
+  ContentArticle,
   CreateJobResponse,
+  DiscoverResponse,
   DiscoveryJob,
   DiscoveryResult,
   DiscoverySchedule,
+  ExportResult,
   FollowUpSequence,
   IncomingEmail,
   InboxProcessSummary,
@@ -18,6 +22,8 @@ import type {
   LeadTimeline,
   OutreachFollowUp,
   OutreachMessage,
+  QuoraAnswer,
+  QuoraQuestion,
   RankingResponse,
   ReplyAnalysis,
   SendDraftResponse,
@@ -292,4 +298,89 @@ export const api = {
 
   testInboxConnection: () =>
     request<InboxTestResult>("POST", "/outreach/inbox/test"),
+
+  // ---- Phase 7: Quora + SEO Authority Engine ---------------------------
+  discoverQuestions: (keyword: string, limit = 20) =>
+    request<DiscoverResponse>("POST", "/quora/questions/discover", {
+      keyword,
+      limit,
+    }),
+
+  listQuestions: (params?: { status?: string; topic?: string; limit?: number }) =>
+    request<QuoraQuestion[]>("GET", "/quora/questions", undefined, {
+      status: params?.status,
+      topic: params?.topic,
+      limit: params?.limit ?? 100,
+    }),
+
+  createQuestion: (payload: {
+    question_text: string;
+    quora_url?: string;
+    topic?: string;
+    tags?: string;
+  }) => request<QuoraQuestion>("POST", "/quora/questions", payload),
+
+  getQuestion: (id: number) => request<QuoraQuestion>("GET", `/quora/questions/${id}`),
+
+  updateQuestionStatus: (id: number, status: string) =>
+    request<QuoraQuestion>("PATCH", `/quora/questions/${id}/status`, { status }),
+
+  deleteQuestion: (id: number) => request<void>("DELETE", `/quora/questions/${id}`),
+
+  listContent: (params?: { topic?: string; limit?: number }) =>
+    request<ContentArticle[]>("GET", "/quora/content", undefined, {
+      topic: params?.topic,
+      limit: params?.limit ?? 100,
+    }),
+
+  createContent: (payload: {
+    title: string;
+    body_markdown: string;
+    topic?: string;
+    tags?: string;
+  }) => request<ContentArticle>("POST", "/quora/content", payload),
+
+  getContent: (id: number) => request<ContentArticle>("GET", `/quora/content/${id}`),
+
+  deleteContent: (id: number) => request<void>("DELETE", `/quora/content/${id}`),
+
+  generateAnswer: (questionId: number, useLlm = false) =>
+    request<QuoraAnswer>("POST", `/quora/questions/${questionId}/generate-answer`, {
+      use_llm: useLlm,
+    }),
+
+  listAnswers: (params?: { question_id?: number; status?: string; limit?: number }) =>
+    request<QuoraAnswer[]>("GET", "/quora/answers", undefined, {
+      question_id: params?.question_id,
+      status: params?.status,
+      limit: params?.limit ?? 100,
+    }),
+
+  getAnswer: (id: number) => request<QuoraAnswer>("GET", `/quora/answers/${id}`),
+
+  updateAnswerStatus: (id: number, status: string) =>
+    request<QuoraAnswer>("PATCH", `/quora/answers/${id}/status`, { status }),
+
+  exportAnswerMarkdown: (id: number) =>
+    request<ExportResult>("POST", `/quora/answers/${id}/export-markdown`),
+
+  reuseAnswerBlog: (id: number) =>
+    request<BlogPost>("POST", `/quora/answers/${id}/reuse-blog`),
+
+  reuseContentBlog: (id: number) =>
+    request<BlogPost>("POST", `/quora/content/${id}/reuse-blog`),
+
+  listBlogs: (params?: { status?: string; source_type?: string; limit?: number }) =>
+    request<BlogPost[]>("GET", "/seo/blog", undefined, {
+      status: params?.status,
+      source_type: params?.source_type,
+      limit: params?.limit ?? 100,
+    }),
+
+  getBlog: (id: number) => request<BlogPost>("GET", `/seo/blog/${id}`),
+
+  exportBlogMarkdown: (id: number) =>
+    request<ExportResult>("POST", `/seo/blog/${id}/export-markdown`),
+
+  deleteBlog: (id: number) => request<void>("DELETE", `/seo/blog/${id}`),
 };
