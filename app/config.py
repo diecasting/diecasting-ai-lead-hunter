@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     ai_provider: str = "openai"
     ai_sales_agent_use_llm: bool = True
 
+    # Phase 9.5: AI Outreach Campaign Engine
+    campaign_engine_enabled: bool = True
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6
