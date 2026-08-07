@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     email_verify_smtp_enabled: bool = True
     email_verify_catch_all_enabled: bool = True
 
+    # Phase 8.5: Contact Intelligence Engine
+    contact_discovery_max_pages: int = 8
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6
