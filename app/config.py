@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     quora_export_dir: str = "data/quora_exports"
     seo_blog_dir: str = "data/seo_blog"
 
+    # Phase 8: Email Discovery & Verification Engine
+    email_crawler_max_pages: int = 8
+    email_verify_smtp_enabled: bool = True
+    email_verify_catch_all_enabled: bool = True
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6
