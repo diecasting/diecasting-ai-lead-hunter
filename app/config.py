@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # Phase 8.5: Contact Intelligence Engine
     contact_discovery_max_pages: int = 8
 
+    # Phase 9: AI Sales Agent
+    ai_sales_agent_enabled: bool = True
+    # LLM provider abstraction hook (currently only "openai" is implemented).
+    ai_provider: str = "openai"
+    ai_sales_agent_use_llm: bool = True
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6

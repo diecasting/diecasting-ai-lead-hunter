@@ -10,6 +10,7 @@ from app.api import crawl as crawl_router
 from app.api import discovery as discovery_router
 from app.api import email as email_router
 from app.api import contacts as contacts_router
+from app.api import agent as agent_router
 from app.api import export as export_router
 from app.api import outreach as outreach_router
 from app.api import quora as quora_router
@@ -51,6 +52,7 @@ app.include_router(crm_models_router.router)
 app.include_router(discovery_router.router)
 app.include_router(email_router.router)
 app.include_router(contacts_router.router)
+app.include_router(agent_router.router)
 app.include_router(quora_router.quora_router)
 app.include_router(quora_router.seo_router)
 

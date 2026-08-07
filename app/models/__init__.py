@@ -12,6 +12,7 @@ from app.models.crawl_task import CrawlTask
 from app.models.discovery_job import DiscoveryJob, DiscoveryTask
 from app.models.discovery_schedule import DiscoverySchedule
 from app.models.email_address import EmailAddress
+from app.models.email_draft import EmailDraft
 from app.models.email_verification import EmailVerification
 from app.models.email_tracking import EmailTracking
 from app.models.followup import FollowUpSequence, OutreachFollowUp
@@ -34,6 +35,7 @@ from app.models.unsubscribe import Unsubscribe
 __all__ = [
     "CompanyLead",
     "CompanyDiscovery",
+    "EmailDraft",
     "DiscoveryJob",
     "DiscoveryTask",
     "DiscoverySchedule",
