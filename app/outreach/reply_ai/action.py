@@ -31,6 +31,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.campaign import CampaignContact, CC_SENT_STATUSES
 from app.models.followup import OutreachFollowUp
 from app.models.lead import CompanyLead
@@ -265,6 +266,19 @@ def apply_intent_action(
         n_cc = _update_campaign_contacts(db, lead, to_status="rfq")
         if n_cc:
             actions.append(f"campaign_contacts -> rfq: {n_cc}")
+
+        # --- Phase 11: create a deal-level Opportunity from the RFQ -------
+        # Only ``rfq_request`` spawns an opportunity. ``unknown`` / ``spam``
+        # (and every other intent) deliberately do NOT, so the Phase 6 / 10
+        # contracts ("unknown yields no applied actions") stay intact. The
+        # creation is gated by the opportunity automation flag.
+        if settings.opportunity_automation_enabled:
+            from app.models.opportunity import create_opportunity_from_rfq
+
+            opp = create_opportunity_from_rfq(
+                db, lead, analysis, ext, contact_id=contact_id, use_ai=True
+            )
+            actions.append(f"opportunity created: id={opp.id}")
     elif intent in _REPLIED_SYNC_INTENTS:
         n_cc = _update_campaign_contacts(db, lead, to_status="replied")
         if n_cc:

@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # engine with sales tasks, RFQ extraction and campaign-contact sync).
     reply_intelligence_enabled: bool = True
 
+    # Phase 11: Sales Pipeline Opportunity Engine (auto-creates a deal-level
+    # Opportunity from a classified ``rfq_request`` reply).
+    opportunity_automation_enabled: bool = True
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6

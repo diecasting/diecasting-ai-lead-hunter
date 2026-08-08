@@ -19,6 +19,7 @@ from app.models.email_tracking import EmailTracking
 from app.models.followup import FollowUpSequence, OutreachFollowUp
 from app.models.incoming_email import IncomingEmail
 from app.models.lead import CompanyLead
+from app.models.opportunity import Opportunity, OpportunityStageHistory
 from app.models.lead_source import LeadSource
 from app.models.outreach_event import OutreachEvent
 from app.models.outreach_message import OutreachMessage
@@ -48,6 +49,8 @@ __all__ = [
     "FollowUpSequence",
     "OutreachFollowUp",
     "IncomingEmail",
+    "Opportunity",
+    "OpportunityStageHistory",
     "SearchResult",
     "CrawlTask",
     "AIAnalysis",

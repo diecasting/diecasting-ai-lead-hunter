@@ -83,6 +83,12 @@ class SalesTask(Base):
         nullable=True,
         index=True,
     )
+    opportunity_id = Column(
+        Integer,
+        ForeignKey("opportunities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
@@ -105,6 +111,7 @@ class SalesTask(Base):
     reply = relationship("ReplyAnalysis", backref="sales_tasks", lazy="selectin")
     contact = relationship("Contact", backref="sales_tasks", lazy="selectin")
     company = relationship("CompanyLead", backref="sales_tasks", lazy="selectin")
+    opportunity = relationship("Opportunity", backref="sales_tasks", lazy="selectin")
 
     def __repr__(self) -> str:  # pragma: no cover
         return (
