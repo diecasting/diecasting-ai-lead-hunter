@@ -4,7 +4,8 @@ Package layout:
 
 * ``classifier`` — rule-based intent classification of a customer reply
   (interested / rfq_request / technical_question / price_request /
-  supplier_existing / not_interested / out_of_office / unknown) with a
+  supplier_existing / not_interested / out_of_office / unknown /
+  wrong_contact / not_now / spam — the last three added in Phase 10) with a
   confidence score and a recommended CRM action.
 * ``action``     — CRM automation triggered by the detected intent (lead
   status transitions, follow-up / sequence cancellation).

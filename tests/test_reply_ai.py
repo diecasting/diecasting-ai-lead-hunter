@@ -70,6 +70,9 @@ def test_intent_categories():
         "not_interested",
         "out_of_office",
         "unknown",
+        "wrong_contact",
+        "not_now",
+        "spam",
     }
 
 

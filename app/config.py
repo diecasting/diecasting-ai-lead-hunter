@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # Phase 9.5: AI Outreach Campaign Engine
     campaign_engine_enabled: bool = True
 
+    # Phase 10: Reply Intelligence Sales Automation (extends the Phase 6 reply
+    # engine with sales tasks, RFQ extraction and campaign-contact sync).
+    reply_intelligence_enabled: bool = True
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6
