@@ -6,7 +6,8 @@ industrial lead; ``discovery_to_lead`` turns a qualified discovery into a
 by the scheduled auto-qualification and the manual "Add to CRM" endpoint.
 """
 import json
-from typing import Optional, Tuple
+import logging
+from typing import Callable, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,8 @@ from app.crud import leads as leads_crud
 from app.discovery import crud as discovery_crud
 from app.models.company_discovery import CompanyDiscovery
 from app.models.lead import CompanyLead
+
+logger = logging.getLogger(__name__)
 
 
 def qualification_rules_pass(
@@ -49,7 +52,10 @@ def qualification_rules_pass(
 
 
 def discovery_to_lead(
-    db: Session, discovery: CompanyDiscovery
+    db: Session,
+    discovery: CompanyDiscovery,
+    *,
+    contact_discovery_fetcher: Optional[Callable[[str], object]] = None,
 ) -> Tuple[CompanyLead, str]:
     """Create (or return) the CRM lead for a discovery.
 
@@ -57,6 +63,11 @@ def discovery_to_lead(
       * ``created``          — a new lead was created and linked
       * ``already_linked``   — this discovery already produced a lead
       * ``duplicate_website``— another lead already owns the website
+
+    After a new lead is created, Phase 13.2.1 enriches it with discovered
+    contacts via the :class:`ContactDiscoveryService`. Contact discovery runs
+    in a self-contained step: the lead is committed *first*, and any discovery
+    failure is logged but never rolls back or blocks lead creation.
 
     No email is sent here — the Lead -> Outreach pipeline applies later.
     """
@@ -103,4 +114,45 @@ def discovery_to_lead(
         crawl_status="pending",
     )
     discovery_crud.link_to_lead(db, discovery, lead.id)
+    # Commit the lead independently so a contact-discovery failure can never
+    # undo the lead creation (requirement: lead creation is the source of truth).
+    db.commit()
+
+    # Phase 13.2.1: enrich the lead with discovered contacts. Isolated by design.
+    _run_contact_discovery(db, lead, fetcher=contact_discovery_fetcher)
+
     return lead, "created"
+
+
+def _run_contact_discovery(
+    db: Session,
+    lead: CompanyLead,
+    *,
+    fetcher: Optional[Callable[[str], object]] = None,
+) -> None:
+    """Run the Contact Discovery Engine for ``lead`` and log the outcome.
+
+    Any exception is caught and logged; the function never raises, so callers
+    (``discovery_to_lead``) can treat lead creation and contact discovery as
+    fully independent steps.
+    """
+    try:
+        from app.contact_discovery.service import ContactDiscoveryService
+
+        service = ContactDiscoveryService()
+        summary = service.discover_company_contacts(db, lead, fetcher=fetcher)
+        logger.info(
+            "contact_discovery_completed",
+            extra={
+                "lead_id": lead.id,
+                "website": lead.website,
+                "contacts_created": summary.get("total_contacts_created", 0),
+                "summary": summary,
+            },
+        )
+    except Exception:  # pragma: no cover - defensive boundary
+        logger.error(
+            "contact_discovery_failed",
+            extra={"lead_id": lead.id, "website": lead.website},
+            exc_info=True,
+        )
