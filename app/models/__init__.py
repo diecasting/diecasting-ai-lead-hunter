@@ -23,6 +23,7 @@ from app.models.opportunity import Opportunity, OpportunityStageHistory
 from app.models.manufacturing_capability import ManufacturingCapability
 from app.models.cost_rate import CostRate
 from app.models.product_requirement import ProductRequirement
+from app.models.quotation import Quote, QuoteLineItem, QuoteVersion
 from app.models.lead_source import LeadSource
 from app.models.outreach_event import OutreachEvent
 from app.models.outreach_message import OutreachMessage
@@ -57,6 +58,9 @@ __all__ = [
     "ManufacturingCapability",
     "CostRate",
     "ProductRequirement",
+    "Quote",
+    "QuoteLineItem",
+    "QuoteVersion",
     "SearchResult",
     "CrawlTask",
     "AIAnalysis",

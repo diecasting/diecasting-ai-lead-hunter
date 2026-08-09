@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # Opportunity from a classified ``rfq_request`` reply).
     opportunity_automation_enabled: bool = True
 
+    # Phase 12.2: Quotation Intelligence Engine (deterministic cost estimation
+    # + optional AI assist for margin / price-range / explanation).
+    quotation_intelligence_enabled: bool = True
+
     # Scheduler (APScheduler)
     scheduler_enabled: bool = False
     scheduler_hour: int = 6
