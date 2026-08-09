@@ -57,6 +57,23 @@ TYPE_GENERIC = "generic"     # other corporate mailbox
 
 EMAIL_TYPES = [TYPE_PERSONAL, TYPE_ROLE, TYPE_GENERIC]
 
+# ---------------------------------------------------------------------------
+# Discovery method vocabulary (Phase 13.1)
+# ---------------------------------------------------------------------------
+# Where the address was *discovered from* (distinct from ``source`` provenance,
+# which records the high-level origin). Mirrors ContactDiscoveryLog.method.
+DISCOVERY_METHOD_WEBSITE = "website"
+DISCOVERY_METHOD_PDF = "pdf"
+DISCOVERY_METHOD_PATTERN = "pattern"
+DISCOVERY_METHOD_EXTERNAL = "external"
+
+DISCOVERY_METHODS = [
+    DISCOVERY_METHOD_WEBSITE,
+    DISCOVERY_METHOD_PDF,
+    DISCOVERY_METHOD_PATTERN,
+    DISCOVERY_METHOD_EXTERNAL,
+]
+
 
 class EmailAddress(Base):
     """A discovered / inferred e-mail address belonging to a company lead."""
@@ -90,6 +107,14 @@ class EmailAddress(Base):
     )
     verification_score = Column(Integer, nullable=True, index=True)  # 0-100
     verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Phase 13.1: how the address was discovered (website / pdf / pattern /
+    # external). Nullable additive column; defaults to "website" for addresses
+    # produced by the existing crawler. Distinct from ``source`` (high-level
+    # origin) -- this is the discovery *engine* that found it.
+    discovery_method = Column(
+        String(20), nullable=True, default=DISCOVERY_METHOD_WEBSITE,
+        server_default=DISCOVERY_METHOD_WEBSITE, index=True,
+    )
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover

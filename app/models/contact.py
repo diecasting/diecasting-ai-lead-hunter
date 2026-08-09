@@ -139,6 +139,16 @@ class Contact(Base):
     # When this contact was first discovered by the engine.
     discovered_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Phase 13.1: how the contact was discovered (website / pdf / pattern /
+    # external). Nullable additive column; defaults to "website" for contacts
+    # produced by the existing crawler. Distinct from ``source`` (high-level
+    # origin) -- this is the discovery *engine* that found it. Reuses the
+    # DISCOVERY_METHOD_* vocabulary from ``app.models.email_address``.
+    discovery_method = Column(
+        String(20), nullable=True, default="website",
+        server_default="website", index=True,
+    )
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover

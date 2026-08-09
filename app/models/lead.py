@@ -11,7 +11,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 
 from app.database import Base
 
@@ -119,6 +119,13 @@ class CompanyLead(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    # --- Phase 13.1: discovery history (cascade removes logs with the lead) -
+    discovery_logs = relationship(
+        "ContactDiscoveryLog",
+        back_populates="company",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:  # pragma: no cover

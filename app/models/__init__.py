@@ -8,6 +8,7 @@ from app.models.ai_analysis import AIAnalysis
 from app.models.company_discovery import CompanyDiscovery
 from app.models.company_document import CompanyDocument
 from app.models.contact import Contact
+from app.models.contact_discovery_log import ContactDiscoveryLog
 from app.models.crawl_task import CrawlTask
 from app.models.discovery_job import DiscoveryJob, DiscoveryTask
 from app.models.discovery_schedule import DiscoverySchedule
@@ -68,6 +69,7 @@ __all__ = [
     "OutreachMessage",
     "OutreachEvent",
     "Contact",
+    "ContactDiscoveryLog",
     "LeadSource",
     "EmailVerification",
     "EmailTracking",
