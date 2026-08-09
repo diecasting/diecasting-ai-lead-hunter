@@ -70,17 +70,37 @@ def extract_linkedin(html: str) -> Optional[str]:
     return m.group(0) if m else None
 
 
+def _email_for_match(html: str, m, site_domain: str) -> Optional[str]:
+    """Find an e-mail *local* to the line/block that contains a contact match.
+
+    Previously every contact was stamped with the first site-wide e-mail
+    (``emails[0]``), which incorrectly associated one mailbox with every person.
+    We now look only inside the matched line so each person is paired with an
+    e-mail that actually appears next to their name (or ``None`` when none is).
+    """
+    start = html.rfind("\n", 0, m.start()) + 1
+    end = html.find("\n", m.end())
+    if end == -1:
+        end = len(html)
+    block = html[start:end]
+    local = extract_and_filter(block, site_domain=site_domain)
+    return local[0] if local else None
+
+
 def extract_contacts(html: str, site_domain: str = "") -> List[Dict[str, Optional[str]]]:
     """Extract contact dicts ``{name, title, email, linkedin}`` from page HTML.
 
     The heuristics are intentionally conservative: we only emit a record when we
     have at least a name OR an e-mail, so we never create empty ``contacts`` rows.
+    E-mail association is *block-scoped*: a contact only receives an e-mail when
+    one appears on the same line as their name/title, never a global default.
     """
     if not html:
         return []
     domain = (url_domain(site_domain) or url_domain_from_html(html)).lower()
 
-    # E-mails (filtered for corporate / sales intent).
+    # E-mails (filtered for corporate / sales intent), used as a fallback when
+    # we see mailboxes but no name/title lines.
     emails = extract_and_filter(html, site_domain=domain)
 
     # LinkedIn profiles.
@@ -89,6 +109,7 @@ def extract_contacts(html: str, site_domain: str = "") -> List[Dict[str, Optiona
     # Name / title lines.
     contacts: List[Dict[str, Optional[str]]] = []
     seen_names: set = set()
+    associated_emails: set = set()
 
     for m in _CONTACT_LINE_RE.finditer(html or ""):
         name = m.group(1).strip()
@@ -98,21 +119,27 @@ def extract_contacts(html: str, site_domain: str = "") -> List[Dict[str, Optiona
         if name in seen_names:
             continue
         seen_names.add(name)
+        email = _email_for_match(html, m, domain)
         contacts.append(
             {
                 "name": name,
                 "title": title,
-                "email": emails[0] if emails else None,
+                "email": email,
                 "linkedin": linkedin,
             }
         )
+        if email:
+            associated_emails.add(email)
 
-    # If we found e-mails but no name/title lines, still record the mailbox.
-    if not contacts and emails:
-        for email in emails[:5]:
-            contacts.append(
-                {"name": None, "title": None, "email": email, "linkedin": linkedin}
-            )
+    # Record any page-wide e-mails that were *not* co-located with a name as
+    # their own bare-mailbox contacts, so discovery stays non-lossy. (Previously
+    # these were incorrectly stamped as the e-mail of *every* named contact.)
+    for email in emails:
+        if email in associated_emails:
+            continue
+        contacts.append(
+            {"name": None, "title": None, "email": email, "linkedin": linkedin}
+        )
 
     # De-duplicate by (name, email).
     dedup: List[Dict[str, Optional[str]]] = []

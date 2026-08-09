@@ -149,6 +149,15 @@ class Contact(Base):
         server_default="website", index=True,
     )
 
+    # Phase 13.2: discovery-engine enrichment (additive, nullable, indexed).
+    # The precise URL the contact was mined from (a website page or a PDF doc).
+    source_url = Column(String(512), nullable=True, index=True)
+    # Deterministic 0-100 discovery quality score produced by the engine
+    # (verification + source + role + pattern signals). Null until scored.
+    discovery_score = Column(Integer, nullable=True, index=True)
+    # Confidence label derived from ``discovery_score`` (high / medium / low).
+    confidence = Column(String(20), nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover
