@@ -291,8 +291,28 @@ def apply_intent_action(
         if settings.opportunity_automation_enabled:
             from app.models.opportunity import create_opportunity_from_rfq
 
+            # Phase 15.4.3: attach the existing conversion signal (if any) for
+            # attribution. Best-effort: ensure the signal reflects this reply by
+            # recomputing first (idempotent upsert — never creates a *new* signal
+            # row), then read it back. Any failure leaves conv_signal = None and
+            # the opportunity is created without attribution (unchanged behavior).
+            conv_signal = None
+            try:
+                from app.conversion.service import ConversionService
+
+                ConversionService(db).recompute(lead.id)
+                conv_signal = ConversionService(db).get_signal(lead.id)
+            except Exception:
+                conv_signal = None
+
             opp = create_opportunity_from_rfq(
-                db, lead, analysis, ext, contact_id=contact_id, use_ai=True
+                db,
+                lead,
+                analysis,
+                ext,
+                contact_id=contact_id,
+                use_ai=True,
+                conversion_signal=conv_signal,
             )
             actions.append(f"opportunity created: id={opp.id}")
     elif intent in _REPLIED_SYNC_INTENTS:

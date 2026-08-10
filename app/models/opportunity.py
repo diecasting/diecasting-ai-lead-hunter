@@ -137,6 +137,15 @@ class Opportunity(Base):
         nullable=True,
         index=True,
     )
+    # Phase 15.4.3: attribution bridge to the Conversion Intelligence signal
+    # that (may have) triggered this deal. Nullable + SET NULL so deleting the
+    # underlying signal never orphans the opportunity.
+    conversion_signal_id = Column(
+        Integer,
+        ForeignKey("conversion_signals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Deal attributes.
     stage = Column(
@@ -151,6 +160,16 @@ class Opportunity(Base):
     probability = Column(Integer, nullable=True, index=True)
     expected_close_date = Column(Date, nullable=True)
     actual_close_date = Column(Date, nullable=True)
+
+    # Phase 15.4.3: Conversion Intelligence snapshot copied at creation time and
+    # an optional AI-enhanced probability. ``probability_source`` distinguishes a
+    # human-set probability ("manual") from one enhanced by the conversion signal
+    # ("conversion"); ``ai_probability`` always records the AI suggestion for
+    # reference without clobbering a manual call.
+    ai_temperature_score = Column(Integer, nullable=True)
+    ai_intent_score = Column(Integer, nullable=True)
+    ai_probability = Column(Integer, nullable=True)
+    probability_source = Column(String(20), nullable=True)
 
     # Sales routing / metadata.
     priority = Column(
@@ -171,6 +190,9 @@ class Opportunity(Base):
     contact = relationship("Contact", backref="opportunities", lazy="selectin")
     reply = relationship("ReplyAnalysis", backref="opportunities", lazy="selectin")
     rfq = relationship("ReplyRFQExtraction", backref="opportunities", lazy="selectin")
+    conv_signal = relationship(
+        "ConversionSignal", backref="opportunities", lazy="selectin"
+    )
     stage_history = relationship(
         "OpportunityStageHistory",
         backref="opportunity",
@@ -224,6 +246,7 @@ def create_opportunity_from_rfq(
     contact_id: Optional[int] = None,
     stage: str = OPP_STAGE_QUALIFICATION,
     use_ai: bool = True,
+    conversion_signal=None,
 ) -> "Opportunity":
     """Create an :class:`Opportunity` from a classified ``rfq_request`` reply.
 
@@ -232,6 +255,13 @@ def create_opportunity_from_rfq(
     persists the opportunity and an opening :class:`OpportunityStageHistory`
     row. The scorer is imported lazily to avoid a circular import with
     ``app.opportunity_scoring``.
+
+    Phase 15.4.3: if an existing :class:`ConversionSignal` is supplied (the
+    signal that triggered / accompanied this reply), it is attached via
+    ``conversion_signal_id`` and its ``temperature_score`` / ``intent_score`` are
+    copied onto ``ai_temperature_score`` / ``ai_intent_score`` for attribution.
+    The signal is **never** created here — the caller passes an already-persisted
+    one (or ``None``).
 
     Returns the created :class:`Opportunity`. Does **not** touch the CRM lead
     status — that is owned by the Phase 6 / 10 action engine.
@@ -255,11 +285,17 @@ def create_opportunity_from_rfq(
         use_ai=use_ai,
     )
 
+    # Phase 15.4.3: copy attribution from the (optional) existing signal.
+    signal_id = getattr(conversion_signal, "id", None)
+    ai_temperature = getattr(conversion_signal, "temperature_score", None)
+    ai_intent = getattr(conversion_signal, "intent_score", None)
+
     opp = Opportunity(
         company_id=lead.id,
         contact_id=contact_id,
         reply_id=analysis.id,
         rfq_id=rfq_extraction.id,
+        conversion_signal_id=signal_id,
         stage=stage,
         amount=score.get("amount"),
         currency=(score.get("currency") or OPP_CURRENCY_DEFAULT),
@@ -269,6 +305,8 @@ def create_opportunity_from_rfq(
         notes=score.get("notes")
         or f"Auto-created from RFQ reply (analysis #{analysis.id})",
         used_ai=bool(used_ai),
+        ai_temperature_score=ai_temperature,
+        ai_intent_score=ai_intent,
     )
     db.add(opp)
     db.commit()
@@ -319,6 +357,68 @@ def apply_stage_change(
         note=note or f"Stage change {from_stage} -> {new_stage}",
     )
     db.add(history)
+    db.commit()
+    db.refresh(opportunity)
+    return opportunity
+
+
+# ---------------------------------------------------------------------------
+# Phase 15.4.3: Conversion Intelligence probability enhancement
+# ---------------------------------------------------------------------------
+PROBABILITY_SOURCE_MANUAL = "manual"
+PROBABILITY_SOURCE_CONVERSION = "conversion"
+
+
+def _ai_probability_from_signal(signal) -> Optional[int]:
+    """Deterministic AI probability (0..100) synthesised from a signal.
+
+    Pure synthesis: temperature carries most of the weight, intent score nudges
+    it (positive intent raises, negative intent lowers, clamped). No LLM, no
+    network. Returns ``None`` when the signal or its temperature is missing.
+    """
+    if signal is None:
+        return None
+    temp = getattr(signal, "temperature_score", None)
+    if temp is None:
+        return None
+    intent = getattr(signal, "intent_score", None) or 0
+    # Intent contributes at most +/-20 points (intent_score is -100..100).
+    intent_nudge = max(-20, min(20, intent // 5))
+    return max(0, min(100, temp + intent_nudge))
+
+
+def enhance_opportunity_probability(db, opportunity, signal=None) -> "Opportunity":
+    """Enhance an opportunity's probability using its conversion signal.
+
+    Computes the AI probability via :func:`_ai_probability_from_signal` and
+    records it on ``ai_probability`` for reference. If the opportunity already
+    carries a *manual* probability (``probability_source == 'manual'``), the
+    existing ``probability`` is preserved and only ``ai_probability`` is updated.
+    Otherwise ``probability`` is overwritten with the AI value and
+    ``probability_source`` is set to ``'conversion'``.
+
+    Does NOT create ConversionSignals, Opportunities, Quotes, SalesTasks, or
+    touch the outreach send path. The signal is resolved from
+    ``opportunity.conversion_signal_id`` when not passed explicitly.
+    """
+    if signal is None and opportunity.conversion_signal_id is not None:
+        from app.models.conversion_signal import ConversionSignal
+
+        signal = (
+            db.query(ConversionSignal)
+            .filter(ConversionSignal.id == opportunity.conversion_signal_id)
+            .first()
+        )
+
+    ai_prob = _ai_probability_from_signal(signal)
+    # Always record the AI suggestion.
+    opportunity.ai_probability = ai_prob
+
+    if ai_prob is not None and opportunity.probability_source != PROBABILITY_SOURCE_MANUAL:
+        opportunity.probability = ai_prob
+        opportunity.probability_source = PROBABILITY_SOURCE_CONVERSION
+
+    db.add(opportunity)
     db.commit()
     db.refresh(opportunity)
     return opportunity
