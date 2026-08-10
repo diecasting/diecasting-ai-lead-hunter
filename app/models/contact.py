@@ -21,6 +21,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 
 from app.database import Base
@@ -157,6 +158,16 @@ class Contact(Base):
     discovery_score = Column(Integer, nullable=True, index=True)
     # Confidence label derived from ``discovery_score`` (high / medium / low).
     confidence = Column(String(20), nullable=True, index=True)
+
+    # Phase 14.1: deterministic outreach ranking (additive, nullable, indexed).
+    # These are produced *only* by the Contact Ranking Engine and never feed
+    # back into the discovery_score / confidence fields above.
+    #   * ranking_score       -- 0-100 outreach-priority score
+    #   * ranking_confidence  -- high / medium / low (data completeness)
+    #   * ranking_reason      -- human-readable breakdown of the score
+    ranking_score = Column(Integer, nullable=True, index=True)
+    ranking_confidence = Column(String(20), nullable=True, index=True)
+    ranking_reason = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
