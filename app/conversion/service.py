@@ -1,7 +1,8 @@
-"""Conversion intelligence service (Phase 15.1.1 / 15.1.2).
+"""Conversion intelligence service (Phase 15.1.1 / 15.1.2 / 15.1.3 / 15.1.4).
 
 Owns persistence of :class:`ConversionSignal` rows and orchestrates the
-deterministic intent-score engine (:mod:`app.conversion.intent`).
+deterministic conversion-intelligence engines (:mod:`app.conversion.intent`,
+:mod:`app.conversion.temperature`, :mod:`app.conversion.action`).
 
 This is a *read-and-write* layer over existing data only — it never touches
 the outreach send path, the email quality gate, opportunity stages, or campaign
@@ -11,13 +12,15 @@ scheduler; all DB work is isolated by the caller's transaction.
 Usage::
 
     svc = ConversionService(db)
-    signal = svc.recompute_intent_score(lead_id)
+    signal = svc.recompute(lead_id)  # intent + temperature + next action
 """
 import json
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.conversion import action as action_engine
 from app.conversion import intent as intent_engine
 from app.conversion import temperature as temperature_engine
 from app.models.conversion_signal import ConversionSignal
@@ -56,8 +59,6 @@ class ConversionService:
         )
         # computed_at is server-defaulted on insert; refresh on update so the
         # caller sees the new timestamp.
-        from datetime import datetime, timezone
-
         signal.computed_at = datetime.now(timezone.utc)
 
         self.db.commit()
@@ -93,8 +94,53 @@ class ConversionService:
         signal.temperature_score = result.temperature_score
         signal.temperature_label = result.temperature_label
         signal.temperature_reason = result.temperature_reason
-        from datetime import datetime, timezone
+        signal.computed_at = datetime.now(timezone.utc)
 
+        self.db.commit()
+        self.db.refresh(signal)
+        return signal
+
+    def recompute_action(self, lead_id: int) -> ConversionSignal:
+        """Recompute and upsert the lead's deterministic next-action.
+
+        Reads the lead's existing intent + temperature signals (recomputing
+        them deterministically when the signal row does not yet carry them) and
+        stores ``next_action`` / ``next_action_priority`` / ``next_action_reason``
+        on the (same) one-row-per-lead :class:`ConversionSignal`. Returns the
+        persisted row.
+        """
+        signal = (
+            self.db.query(ConversionSignal)
+            .filter(ConversionSignal.lead_id == lead_id)
+            .first()
+        )
+        if signal is None:
+            signal = ConversionSignal(lead_id=lead_id)
+            self.db.add(signal)
+
+        result = action_engine.compute_next_action(
+            self.db,
+            lead_id,
+            dominant_intent=signal.dominant_intent,
+            intent_score=signal.intent_score,
+            temperature_score=signal.temperature_score,
+            temperature_label=signal.temperature_label,
+        )
+
+        signal.next_action = result.next_action
+        signal.next_action_priority = result.next_action_priority
+        signal.next_action_reason = result.next_action_reason
+        # Also persist the signals the recommendation was derived from so a
+        # standalone recompute_action() call yields a consistent row (the
+        # engines recompute them deterministically when the row lacks them).
+        if signal.intent_score is None:
+            signal.intent_score = result.intent_score
+        if signal.dominant_intent is None:
+            signal.dominant_intent = result.dominant_intent
+        if signal.temperature_score is None:
+            signal.temperature_score = result.temperature_score
+        if signal.temperature_label is None:
+            signal.temperature_label = result.temperature_label
         signal.computed_at = datetime.now(timezone.utc)
 
         self.db.commit()
@@ -102,13 +148,14 @@ class ConversionService:
         return signal
 
     def recompute(self, lead_id: int) -> ConversionSignal:
-        """Run both engines (intent + temperature) in one call.
+        """Run all three engines (intent + temperature + next action) in one call.
 
         Convenience for the future reply-analysis / scheduler wiring: keeps the
         single one-row-per-lead :class:`ConversionSignal` fully populated.
         """
         self.recompute_intent_score(lead_id)
-        return self.recompute_temperature(lead_id)
+        self.recompute_temperature(lead_id)
+        return self.recompute_action(lead_id)
 
     def get_signal(self, lead_id: int) -> Optional[ConversionSignal]:
         """Return the latest :class:`ConversionSignal` for a lead, if any."""
