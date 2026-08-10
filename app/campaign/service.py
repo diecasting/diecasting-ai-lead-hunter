@@ -15,16 +15,24 @@ All functions take a SQLAlchemy ``Session`` and operate read-only on the
 underlying tables; they never call the outreach send path, so the existing
 workflow is untouched.
 """
+import json
 import logging
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.ai_sales_agent import crud as draft_crud
+from app.ai_sales_agent import quality as draft_quality
 from app.ai_sales_agent import service as agent_svc
 from app.campaign import crud
+from app.contact_intelligence.crud import get as get_contact_record
 from app.contact_intelligence.crud import list_for_company
 from app.contact_ranking import ContactRankingService
+from app.models.email_draft import DRAFT_STATUS_DRAFT, EmailDraft
+from app.outreach.personalization import (
+    PersonalizationService as OutreachPersonalizationService,
+)
 from app.models.campaign import (
     CAMPAIGN_STATUS_ACTIVE,
     CC_SENT_STATUSES,
@@ -261,6 +269,119 @@ def build_campaign_targets(
 # ---------------------------------------------------------------------------
 # Batch draft generation (reuse AI Sales Agent + quality gate)
 # ---------------------------------------------------------------------------
+def _try_personalized_draft(
+    db: Session,
+    company_id: int,
+    *,
+    contact_id: Optional[int] = None,
+    tone: Optional[str] = None,
+) -> Optional[EmailDraft]:
+    """Attempt a deterministic personalized draft via ``PersonalizationService``.
+
+    Returns an :class:`~app.models.email_draft.EmailDraft` on success, or
+    ``None`` to signal the caller should fall back to the existing AI Sales
+    Agent draft path. Any exception inside the personalization layer is an
+    internal failure and must NOT abort campaign generation — it is logged and
+    swallowed here so draft creation (and therefore the campaign build) proceeds
+    via the fallback.
+    """
+    try:
+        lead = (
+            db.query(CompanyLead)
+            .filter(CompanyLead.id == company_id)
+            .first()
+        )
+        if lead is None:
+            return None
+        contact = get_contact_record(db, contact_id) if contact_id is not None else None
+
+        svc = OutreachPersonalizationService(db)
+        email = svc.personalize(lead, contact)
+        if email is None:
+            return None
+
+        # Pull recipient identifiers off the contact when present.
+        to_name = to_email = email_address_id = role_category = prompt_role = None
+        if contact is not None:
+            to_name = contact.full_name or contact.first_name
+            to_email = contact.email
+            email_address_id = contact.email_address_id
+            role_category = contact.title_category
+            prompt_role = contact.role
+
+        # Score the personalized copy with the same deterministic quality scorer
+        # the AI Sales Agent uses, so the quality gate treats it identically.
+        score = draft_quality.score_email(
+            email.subject, email.body, company=lead.name, to_name=to_name
+        )
+
+        draft = draft_crud.create(
+            db,
+            company_id=company_id,
+            subject=email.subject,
+            body=email.body,
+            contact_id=contact.id if contact is not None else None,
+            email_address_id=email_address_id,
+            to_name=to_name,
+            to_email=to_email,
+            role_category=role_category,
+            prompt_role=prompt_role,
+            status=DRAFT_STATUS_DRAFT,
+            research_summary=json.dumps(
+                {
+                    "source": "personalization_service",
+                    "personalization_score": email.personalization_score,
+                    "personalization_reason": email.personalization_reason,
+                },
+                ensure_ascii=False,
+            ),
+            used_ai=False,
+            personalization_score=email.personalization_score,
+            quality_score=score.overall,
+        )
+        return draft
+    except Exception:
+        logger.warning(
+            "personalization_failed",
+            extra={"company_id": company_id, "contact_id": contact_id},
+            exc_info=True,
+        )
+        return None
+
+
+def _generate_contact_draft(
+    db: Session,
+    company_id: int,
+    *,
+    contact_id: Optional[int] = None,
+    use_ai: bool = False,
+    tone: Optional[str] = None,
+) -> Optional[EmailDraft]:
+    """Produce an email draft for one campaign contact.
+
+    Phase 14.2.1 wiring: in the deterministic (non-AI) mode the outreach
+    preparation flow first tries :class:`PersonalizationService` to render a
+    context-rich, ranking-aware draft (the producer of the *personalized*
+    subject / body). If that fails for any reason we fall back to the existing
+    AI Sales Agent draft path (its deterministic baseline) so campaign creation
+    is never blocked. The AI path (``use_ai=True``) keeps using the agent
+    unchanged.
+    """
+    if not use_ai:
+        personalized = _try_personalized_draft(
+            db, company_id, contact_id=contact_id, tone=tone
+        )
+        if personalized is not None:
+            return personalized
+    result = agent_svc.generate_draft(
+        db, company_id, contact_id=contact_id, use_ai=use_ai, tone=tone
+    )
+    if result is None:
+        return None
+    draft, _research = result
+    return draft
+
+
 def generate_drafts(
     db: Session,
     campaign_id: int,
@@ -290,16 +411,15 @@ def generate_drafts(
     for cc in selected:
         if cc.company_id is None:
             continue
-        result = agent_svc.generate_draft(
+        draft = _generate_contact_draft(
             db,
             cc.company_id,
             contact_id=cc.contact_id,
             use_ai=use_ai,
             tone=tone,
         )
-        if result is None:
+        if draft is None:
             continue
-        draft, _research = result
         generated += 1
         cc.draft_id = draft.id
         cc.quality_score = draft.quality_score
