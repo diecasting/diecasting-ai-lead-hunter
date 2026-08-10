@@ -19,6 +19,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.conversion import intent as intent_engine
+from app.conversion import temperature as temperature_engine
 from app.models.conversion_signal import ConversionSignal
 
 
@@ -62,6 +63,52 @@ class ConversionService:
         self.db.commit()
         self.db.refresh(signal)
         return signal
+
+    def recompute_temperature(self, lead_id: int) -> ConversionSignal:
+        """Recompute and upsert the lead's deterministic temperature.
+
+        Reads the lead's existing intent score (recomputing it if the signal row
+        does not yet carry one) plus recency, engagement telemetry, and the best
+        contact ranking, then stores ``temperature_score`` / ``temperature_label``
+        / ``temperature_reason`` on the (same) one-row-per-lead
+        :class:`ConversionSignal`. Returns the persisted row.
+        """
+        signal = (
+            self.db.query(ConversionSignal)
+            .filter(ConversionSignal.lead_id == lead_id)
+            .first()
+        )
+        if signal is None:
+            signal = ConversionSignal(lead_id=lead_id)
+            self.db.add(signal)
+
+        # Reuse the persisted intent score when present; otherwise fall back to
+        # a fresh deterministic recompute so temperature never hard-depends on a
+        # prior intent pass.
+        intent_score = signal.intent_score
+        result = temperature_engine.compute_temperature(
+            self.db, lead_id, intent_score=intent_score
+        )
+
+        signal.temperature_score = result.temperature_score
+        signal.temperature_label = result.temperature_label
+        signal.temperature_reason = result.temperature_reason
+        from datetime import datetime, timezone
+
+        signal.computed_at = datetime.now(timezone.utc)
+
+        self.db.commit()
+        self.db.refresh(signal)
+        return signal
+
+    def recompute(self, lead_id: int) -> ConversionSignal:
+        """Run both engines (intent + temperature) in one call.
+
+        Convenience for the future reply-analysis / scheduler wiring: keeps the
+        single one-row-per-lead :class:`ConversionSignal` fully populated.
+        """
+        self.recompute_intent_score(lead_id)
+        return self.recompute_temperature(lead_id)
 
     def get_signal(self, lead_id: int) -> Optional[ConversionSignal]:
         """Return the latest :class:`ConversionSignal` for a lead, if any."""

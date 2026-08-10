@@ -1,9 +1,10 @@
 """ConversionSignal ORM model (Phase 15.1.1 Conversion Signal Foundation).
 
 A :class:`ConversionSignal` is the *latest* computed conversion-intelligence
-snapshot for a lead. It currently holds the deterministic **intent score**
-(Phase 15.1.2) and the dominant driving intent; later phases (15.1.3
-temperature, 15.1.4 next-action) will extend the same table.
+snapshot for a lead. Phase 15.1.2 adds the deterministic **intent score** and
+the dominant driving intent; Phase 15.1.3 adds the deterministic **lead
+temperature** (0..100 with a cold/warm/hot label) and a human-readable reason.
+Later phases (15.1.4 next-action) will extend the same table.
 
 One row per lead (upserted by :class:`app.conversion.service.ConversionService`).
 ``lead_id`` is ``SET NULL`` so deleting the underlying ``CompanyLead`` never
@@ -60,6 +61,13 @@ class ConversionSignal(Base):
         DateTime(timezone=True), default=_utcnow, nullable=False, index=True
     )
 
+    # Phase 15.1.3: deterministic lead temperature (0..100) with a cold/warm/hot
+    # label and a human-readable breakdown. Pure synthesis of the intent score,
+    # recency/activity, engagement telemetry, and best contact ranking.
+    temperature_score = Column(Integer, nullable=True, index=True)
+    temperature_label = Column(String(20), nullable=True, index=True)
+    temperature_reason = Column(Text, nullable=True)
+
     lead = relationship(
         "CompanyLead", backref="conversion_signals", lazy="selectin"
     )
@@ -67,5 +75,7 @@ class ConversionSignal(Base):
     def __repr__(self) -> str:  # pragma: no cover
         return (
             f"<ConversionSignal id={self.id} lead_id={self.lead_id} "
-            f"intent_score={self.intent_score} dominant={self.dominant_intent!r}>"
+            f"intent_score={self.intent_score} dominant={self.dominant_intent!r} "
+            f"temperature={self.temperature_score} "
+            f"label={self.temperature_label!r}>"
         )
