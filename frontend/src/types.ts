@@ -308,6 +308,48 @@ export interface LeadImportPreview {
   rows: ImportPreviewRow[];
 }
 
+// Phase 15.3: Conversion Intelligence (mirrors app/api/conversion.py schemas)
+export interface HotLead {
+  lead_id: number;
+  company_name?: string | null;
+  intent_score?: number | null;
+  dominant_intent?: string | null;
+  temperature_score?: number | null;
+  temperature_label?: string | null;
+  next_action?: string | null;
+  next_action_priority?: string | null;
+  next_action_reason?: string | null;
+  computed_at?: string | null;
+  // Client-side enrichment from the Leads API (country / industry are not
+  // returned by the hot-leads endpoint). Never sent to the backend.
+  country?: string | null;
+  industry?: string | null;
+}
+
+export interface ConversionSignal {
+  lead_id: number;
+  intent_score?: number | null;
+  dominant_intent?: string | null;
+  signal_sources?: Record<string, unknown> | null;
+  temperature_score?: number | null;
+  temperature_label?: string | null;
+  next_action?: string | null;
+  next_action_priority?: string | null;
+  next_action_reason?: string | null;
+  computed_at?: string | null;
+}
+
+export interface AcceptResult {
+  task_id: number;
+  lead_id: number;
+  title: string;
+  priority: string;
+  status: string;
+  category?: string | null;
+  accepted_action: string;
+  already_exists: boolean;
+}
+
 // Phase 7: Quora + SEO Authority Engine
 export interface QuoraQuestion {
   id: number;

@@ -24,6 +24,10 @@ from app.conversion import action as action_engine
 from app.conversion import intent as intent_engine
 from app.conversion import temperature as temperature_engine
 from app.models.conversion_signal import ConversionSignal
+from app.models.recommendation import (
+    REC_STATUS_GENERATED,
+    Recommendation,
+)
 
 
 class ConversionService:
@@ -151,11 +155,47 @@ class ConversionService:
         """Run all three engines (intent + temperature + next action) in one call.
 
         Convenience for the future reply-analysis / scheduler wiring: keeps the
-        single one-row-per-lead :class:`ConversionSignal` fully populated.
+        single one-row-per-lead :class:`ConversionSignal` fully populated. A
+        fresh :class:`Recommendation` (status ``generated``) is recorded for the
+        resulting next action so the Phase 15.3.3 accept flow has an auditable
+        entity to act on. **No SalesTask is created here** — task creation stays
+        exclusively in the accept endpoint.
         """
         self.recompute_intent_score(lead_id)
         self.recompute_temperature(lead_id)
-        return self.recompute_action(lead_id)
+        signal = self.recompute_action(lead_id)
+        self._record_recommendation(lead_id, signal)
+        return signal
+
+    def _record_recommendation(
+        self, lead_id: int, signal: ConversionSignal
+    ) -> Optional[Recommendation]:
+        """Create a ``generated`` Recommendation for the signal's next action.
+
+        One recommendation is created per recompute call (the accept endpoint
+        consumes the latest ``generated`` one). Confidence is derived from the
+        next-action priority so the record carries a 0..100 strength signal.
+        """
+        action = signal.next_action
+        if not action:
+            return None
+        priority = signal.next_action_priority
+        confidence = {
+            "high": 100.0,
+            "medium": 66.0,
+            "low": 33.0,
+        }.get(priority, 0.0)
+        rec = Recommendation(
+            company_id=lead_id,
+            conversion_signal_id=signal.id,
+            action=action,
+            confidence_score=confidence,
+            status=REC_STATUS_GENERATED,
+        )
+        self.db.add(rec)
+        self.db.commit()
+        self.db.refresh(rec)
+        return rec
 
     def get_signal(self, lead_id: int) -> Optional[ConversionSignal]:
         """Return the latest :class:`ConversionSignal` for a lead, if any."""

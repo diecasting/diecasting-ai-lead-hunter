@@ -67,6 +67,16 @@ _TASK_POLICY: dict = {
     "unknown": ("review", TASK_PRIORITY_MEDIUM, None, False),
 }
 
+# Phase 15.3.5: maps a reply intent to the conversion action understood by the
+# Phase 15.3.3 accept endpoint, so reply-driven and accept-driven tasks can be
+# de-duplicated on (company_id, conversion_action, status=open). Only intents
+# that have an accept-endpoint equivalent are tagged; the remaining 15.3.3
+# actions (send_capability_case / stop_sequence / suppress_contact) have no
+# reply-driven counterpart and are therefore only ever created via accept.
+_CONVERSION_ACTION_BY_INTENT: dict = {
+    "rfq_request": "prepare_quote",
+}
+
 # Intents that represent a genuine customer response and should therefore flip
 # any sent campaign-contact queue entries to "replied" (rfq_request is handled
 # separately -> "rfq").
@@ -153,6 +163,7 @@ def _create_task(
     category: str,
     priority: str,
     title: str,
+    conversion_action: Optional[str] = None,
 ) -> SalesTask:
     task = SalesTask(
         reply_id=analysis.id,
@@ -166,6 +177,7 @@ def _create_task(
         priority=priority,
         status=TASK_STATUS_OPEN,
         category=category,
+        conversion_action=conversion_action,
     )
     db.add(task)
     db.commit()
@@ -232,6 +244,9 @@ def apply_intent_action(
     policy = _TASK_POLICY.get(intent, (None, None, None, False))
     _category, priority, title, make_task = policy
     if make_task and title:
+        # Phase 15.3.5: tag the task with its conversion action so the
+        # Phase 15.3.3 accept endpoint can de-duplicate against it.
+        conv_action = _CONVERSION_ACTION_BY_INTENT.get(intent)
         task = _create_task(
             db,
             analysis=analysis,
@@ -240,6 +255,7 @@ def apply_intent_action(
             category=_category,
             priority=priority,
             title=title,
+            conversion_action=conv_action,
         )
         actions.append(f"sales_task created: id={task.id}")
 

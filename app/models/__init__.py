@@ -38,6 +38,7 @@ from app.models.quora import (
 from app.models.reply_analysis import ReplyAnalysis
 from app.models.reply_inbox import ReplyInbox
 from app.models.reply_rfq_extraction import ReplyRFQExtraction
+from app.models.recommendation import Recommendation
 from app.models.sales_task import SalesTask
 from app.models.search_result import SearchResult
 from app.models.unsubscribe import Unsubscribe

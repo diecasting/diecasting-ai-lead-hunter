@@ -101,6 +101,11 @@ class SalesTask(Base):
         server_default="open", index=True,
     )
     category = Column(String(60), nullable=True, index=True)
+    # Phase 15.3.5: stable conversion-action tag used to de-duplicate tasks
+    # created by the Phase 10 reply flow against those accepted via the
+    # Phase 15.3.3 conversion API (e.g. "prepare_quote"). Null for tasks that
+    # predate this field or that have no conversion-action equivalent.
+    conversion_action = Column(String(40), nullable=True, index=True)
     due_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)

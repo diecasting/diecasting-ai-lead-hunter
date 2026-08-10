@@ -9,6 +9,9 @@ import type {
   DiscoverResponse,
   DiscoveryJob,
   DiscoveryResult,
+  ConversionSignal,
+  HotLead,
+  AcceptResult,
   DiscoverySchedule,
   ExportResult,
   FollowUpSequence,
@@ -383,4 +386,34 @@ export const api = {
     request<ExportResult>("POST", `/seo/blog/${id}/export-markdown`),
 
   deleteBlog: (id: number) => request<void>("DELETE", `/seo/blog/${id}`),
+
+  // ---- Conversion Intelligence (Phase 15.3) -----------------------------
+  // GET /api/conversion/hot-leads — ranked conversion opportunities.
+  // Filters: label (hot|warm|cold), action, min_temperature (0-100),
+  // include_suppressed (bool), limit (default 50, max 500).
+  getHotLeads: (params?: {
+    label?: "hot" | "warm" | "cold";
+    action?: string;
+    min_temperature?: number;
+    include_suppressed?: boolean;
+    limit?: number;
+  }) =>
+    request<HotLead[]>("GET", "/conversion/hot-leads", undefined, {
+      label: params?.label,
+      action: params?.action,
+      min_temperature: params?.min_temperature,
+      include_suppressed: params?.include_suppressed,
+      limit: params?.limit ?? 50,
+    }),
+
+  // GET /api/conversion/lead/{id} — full conversion intelligence snapshot.
+  getConversionSignal: (leadId: number) =>
+    request<ConversionSignal>("GET", `/conversion/lead/${leadId}`),
+
+  // POST /api/conversion/lead/{id}/accept — accept recommendation -> SalesTask.
+  acceptRecommendation: (leadId: number, action: string, force = false) =>
+    request<AcceptResult>("POST", `/conversion/lead/${leadId}/accept`, {
+      action,
+      force,
+    }),
 };

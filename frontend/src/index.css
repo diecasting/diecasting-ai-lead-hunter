@@ -637,3 +637,61 @@ pre {
 .badge-amber { background: #fef3c7; color: #b45309; }
 .badge-purple { background: #ede9fe; color: #6d28d9; }
 
+/* ---- Phase 15.3: Conversion Intelligence module ----------------------- */
+/* Monospace helper for intent scores / IDs. */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+/* Neutral action badge (distinct from priority/source badges). */
+.badge-action {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-weight: 500;
+}
+
+/* Card grid wrapper (two-column on wide screens, single on narrow). */
+.card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Success / confirmation banner (e.g. after accepting a recommendation). */
+.success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid #22c55e;
+  color: #bbf7d0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* Key/value table used inside detail cards. */
+table.kv {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.kv td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 4px;
+  vertical-align: top;
+}
+
+table.kv td:first-child {
+  color: var(--muted);
+  width: 180px;
+  font-weight: 500;
+}
+

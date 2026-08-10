@@ -49,9 +49,15 @@ from app.conversion.action import (
     recommend_next_action,
 )
 from app.conversion.service import ConversionService
+from app.conversion.execution import (
+    SUPPORTED_ACTIONS,
+    create_task_from_recommendation,
+)
 
 __all__ = [
     "ConversionService",
+    "create_task_from_recommendation",
+    "SUPPORTED_ACTIONS",
     "IntentScoreResult",
     "TemperatureResult",
     "NextActionResult",

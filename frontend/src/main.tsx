@@ -12,6 +12,8 @@ import DiscoveryAutomationPage from "./pages/DiscoveryAutomationPage";
 import FollowupAutomationPage from "./pages/FollowupAutomationPage";
 import InboxPage from "./pages/InboxPage";
 import AuthorityPage from "./pages/AuthorityPage";
+import HotLeadsPage from "./pages/HotLeadsPage";
+import LeadConversionDetailPage from "./pages/LeadConversionDetailPage";
 import "./index.css";
 
 const router = createHashRouter([
@@ -22,6 +24,8 @@ const router = createHashRouter([
       { index: true, element: <LeadsPage /> },
       { path: "leads", element: <LeadsPage /> },
       { path: "leads/:id", element: <LeadDetailPage /> },
+      { path: "conversion", element: <HotLeadsPage /> },
+      { path: "conversion/:id", element: <LeadConversionDetailPage /> },
       { path: "drafts", element: <DraftsPage /> },
       { path: "quality", element: <QualityPage /> },
       { path: "discovery", element: <DiscoveryPage /> },

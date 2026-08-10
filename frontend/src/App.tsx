@@ -8,6 +8,9 @@ export default function App() {
         <NavLink to="/leads" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           Leads
         </NavLink>
+        <NavLink to="/conversion" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
+          Conversion Intelligence
+        </NavLink>
         <NavLink to="/drafts" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           Outreach Drafts
         </NavLink>
