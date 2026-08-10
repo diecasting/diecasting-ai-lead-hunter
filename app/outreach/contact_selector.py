@@ -85,6 +85,28 @@ def contact_confidence(
     )
 
 
+def _ranking_sort_key(item):
+    """Blend the Phase 14.1 outreach ``ranking_score`` with the legacy
+    role/confidence ordering.
+
+    ``item`` is a ``(contact, confidence)`` pair. When a contact carries a
+    computed ``ranking_score`` it is sorted first (``group == 0``) and ranked by
+    that score; contacts that have not been ranked yet fall into ``group == 1``
+    and use the legacy role-priority / confidence / primary ordering. So the
+    ranking engine's output is authoritative *when available*, and selection
+    degrades gracefully to the pre-14.1 behaviour otherwise.
+    """
+    c, conf = item
+    rs = getattr(c, "ranking_score", None)
+    role = _contact_role(c)
+    primary = -int(bool(getattr(c, "is_primary", False)))
+    if rs is not None:
+        # Ranking present: score dominates, legacy signals break ties.
+        return (0, -rs, role_priority(role), -conf, primary)
+    # Fallback: legacy role-priority / confidence / primary ordering.
+    return (1, role_priority(role), -conf, primary)
+
+
 def select_best_contact(
     contacts: List,
     *,
@@ -93,9 +115,10 @@ def select_best_contact(
 ) -> Optional[object]:
     """Return the highest-ranked contact (or ``None`` if none are usable).
 
-    Ranking key (descending): role priority points, then confidence, then
-    primary flag, then has-email. Contacts flagged ``do_not_contact`` or with no
-    e-mail are excluded.
+    Selection prefers the deterministic ``ContactRankingService`` output
+    (``ranking_score``) when present, falling back to the legacy role-priority +
+    confidence + primary ordering when a contact has not been ranked yet.
+    Contacts flagged ``do_not_contact`` or with no e-mail are excluded.
     """
     if not contacts:
         return None
@@ -113,16 +136,7 @@ def select_best_contact(
     if not candidates:
         return None
 
-    # Sort by: role priority (asc), confidence (desc), primary (desc).
-    def sort_key(item):
-        c, conf = item
-        return (
-            role_priority(_contact_role(c)),
-            -conf,
-            -int(bool(getattr(c, "is_primary", False))),
-        )
-
-    candidates.sort(key=sort_key)
+    candidates.sort(key=_ranking_sort_key)
     return candidates[0][0]
 
 
@@ -132,10 +146,10 @@ def rank_contacts(
     verify: Optional[Callable[[str], VerificationResult]] = None,
 ) -> List:
     """Return all usable contacts sorted best-first (for debugging / display)."""
-    usable = [c for c in contacts if not getattr(c, "do_not_contact", False) and _contact_email(c)]
-    usable.sort(key=lambda c: (
-        role_priority(_contact_role(c)),
-        -contact_confidence(c, verify=verify),
-        -int(bool(getattr(c, "is_primary", False))),
-    ))
-    return usable
+    usable = [
+        (c, contact_confidence(c, verify=verify))
+        for c in contacts
+        if not getattr(c, "do_not_contact", False) and _contact_email(c)
+    ]
+    usable.sort(key=_ranking_sort_key)
+    return [c for c, _ in usable]

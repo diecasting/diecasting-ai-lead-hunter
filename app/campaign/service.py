@@ -15,6 +15,7 @@ All functions take a SQLAlchemy ``Session`` and operate read-only on the
 underlying tables; they never call the outreach send path, so the existing
 workflow is untouched.
 """
+import logging
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.ai_sales_agent import service as agent_svc
 from app.campaign import crud
 from app.contact_intelligence.crud import list_for_company
+from app.contact_ranking import ContactRankingService
 from app.models.campaign import (
     CAMPAIGN_STATUS_ACTIVE,
     CC_SENT_STATUSES,
@@ -40,6 +42,8 @@ from app.models.campaign import (
 from app.models.contact import Contact
 from app.models.email_address import EmailAddress
 from app.models.lead import CompanyLead
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -122,12 +126,21 @@ def rank_companies(companies: List[CompanyLead]) -> List[CompanyLead]:
 # Targeting — contacts
 # ---------------------------------------------------------------------------
 def _contact_sort_key(contact: Contact):
-    """Lower tuple sorts first: procurement first, then higher purchasing score,
-    then higher seniority."""
+    """Lower tuple sorts first.
+
+    Phase 14.1.1: when a deterministic ``ranking_score`` has been computed for
+    the contact (via ``ContactRankingService``) it is the primary sort key and
+    always precedes contacts that have not been ranked yet. Contacts without
+    ranking data fall back to the legacy procurement / purchasing-score /
+    seniority ordering, so selection is backward-compatible.
+    """
+    rs = getattr(contact, "ranking_score", None)
+    if rs is not None:
+        return (0, -rs)
     procurement_first = 0 if (contact.title_category or "") == "procurement" else 1
     score = contact.purchasing_score or 0
     seniority = _SENIORITY_RANK.get((contact.seniority or "").lower(), 0)
-    return (procurement_first, -score, -seniority)
+    return (1, procurement_first, -score, -seniority)
 
 
 def _is_deliverable(db: Session, contact: Contact) -> bool:
@@ -196,6 +209,20 @@ def build_campaign_targets(
     added = 0
     rank = 0
     for company in companies:
+        # Phase 14.1.1: compute the deterministic outreach ranking for this
+        # company's contacts *before* selection. The ranking engine is the
+        # producer of ``Contact.ranking_score``; wiring it here makes the
+        # campaign engine consume that score. A ranking failure is isolated so
+        # it degrades gracefully to the legacy ordering instead of aborting the
+        # whole campaign build.
+        try:
+            ContactRankingService(db).rank_company_contacts(company.id)
+        except Exception:
+            logger.warning(
+                "contact_ranking_failed",
+                extra={"company_id": company.id},
+                exc_info=True,
+            )
         contacts = select_contacts(
             db, company.id, quality_gate_min=quality_gate_min
         )
