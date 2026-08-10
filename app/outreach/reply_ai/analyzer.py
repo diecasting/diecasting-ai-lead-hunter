@@ -5,14 +5,18 @@
 records a ``replied`` timeline event (best-effort) for genuine customer
 responses.
 """
+import logging
 from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.conversion.service import ConversionService
 from app.models.lead import CompanyLead
 from app.models.reply_analysis import ReplyAnalysis
 from app.outreach.reply_ai import action as reply_action
 from app.outreach.reply_ai.classifier import classify_reply
+
+logger = logging.getLogger(__name__)
 
 # Intents that count as a genuine customer response (timeline-worthy).
 _REAL_REPLY_INTENTS = {
@@ -65,6 +69,17 @@ def analyze_reply(
             )
         except Exception:
             pass  # timeline recording is best-effort
+
+    # Conversion intelligence (Phase 15.2.1): keep the lead's conversion
+    # snapshot (intent score / temperature / next action) in sync with the new
+    # reply. Isolated so any failure here never breaks reply analysis, the CRM
+    # automation above, or the timeline milestone. The recompute is additive and
+    # deterministic — it only reads existing ReplyAnalysis / OutreachEvent / lead
+    # data and writes the one-row-per-lead ConversionSignal.
+    try:
+        ConversionService(db).recompute(lead.id)
+    except Exception:
+        logger.warning("conversion_recompute_failed", exc_info=True)
 
     return analysis, actions
 
