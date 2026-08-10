@@ -52,11 +52,15 @@ from app.conversion.service import ConversionService
 from app.conversion.execution import (
     SUPPORTED_ACTIONS,
     create_task_from_recommendation,
+    mark_recommendation_completed,
+    expire_stale_recommendations,
 )
 
 __all__ = [
     "ConversionService",
     "create_task_from_recommendation",
+    "mark_recommendation_completed",
+    "expire_stale_recommendations",
     "SUPPORTED_ACTIONS",
     "IntentScoreResult",
     "TemperatureResult",

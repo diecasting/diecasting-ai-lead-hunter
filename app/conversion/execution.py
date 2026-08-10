@@ -27,8 +27,17 @@ from sqlalchemy.orm import Session
 from app.crud import outreach_events as events_crud
 from app.models.conversion_signal import ConversionSignal
 from app.models.lead import CompanyLead
+from app.models.recommendation import (
+    REC_ACTIVE_STATUSES,
+    REC_STATUS_ACCEPTED,
+    REC_STATUS_COMPLETED,
+    REC_STATUS_EXPIRED,
+    REC_STATUS_GENERATED,
+    Recommendation,
+)
 from app.models.sales_task import (
     SalesTask,
+    TASK_STATUS_DONE,
     TASK_STATUS_OPEN,
 )
 
@@ -79,10 +88,17 @@ def create_task_from_recommendation(
     action: str,
     *,
     force: bool = False,
+    recommendation: Optional[Recommendation] = None,
 ) -> Tuple[SalesTask, bool]:
     """Create (or return existing) SalesTask from a human-accepted recommendation.
 
     Returns ``(task, already_exists)``.
+
+    When ``recommendation`` is supplied (the accepted :class:`Recommendation`),
+    the created task id is stamped onto ``recommendation.sales_task_id`` so the
+    recommendation keeps a traceable link to the task it spawned (Phase 15.4.2).
+    The recommendation's ``status`` / ``accepted_at`` are set by the caller's
+    accept flow — this function only writes the task link.
 
     Raises
     ------
@@ -108,6 +124,11 @@ def create_task_from_recommendation(
     # (covers both reply-driven and previously-accepted tasks).
     existing = _find_open_task(db, lead_id=lead.id, action=action)
     if existing is not None:
+        # Keep the recommendation linked even when we reuse an existing task.
+        if recommendation is not None and recommendation.sales_task_id is None:
+            recommendation.sales_task_id = existing.id
+            db.add(recommendation)
+            db.commit()
         return existing, True
 
     task = SalesTask(
@@ -126,6 +147,12 @@ def create_task_from_recommendation(
     db.commit()
     db.refresh(task)
 
+    # Phase 15.4.2: close the loop — link the accepted recommendation to the task.
+    if recommendation is not None:
+        recommendation.sales_task_id = task.id
+        db.add(recommendation)
+        db.commit()
+
     # Safety actions confirm the opt-out only after explicit human acceptance.
     if sets_do_not_contact:
         lead.do_not_contact = True
@@ -140,3 +167,90 @@ def create_task_from_recommendation(
         pass
 
     return task, False
+
+
+# ---------------------------------------------------------------------------
+# Phase 15.4.2: Recommendation lifecycle closure helpers
+# ---------------------------------------------------------------------------
+def mark_recommendation_completed(
+    db: Session,
+    *,
+    recommendation_id: Optional[int] = None,
+    sales_task_id: Optional[int] = None,
+    opportunity_id: Optional[int] = None,
+) -> Optional[Recommendation]:
+    """Mark a recommendation ``completed`` (and stamp ``completed_at``).
+
+    Locates the target recommendation by one of ``recommendation_id``,
+    ``sales_task_id`` (the task spawned by accept), or ``opportunity_id``
+    (a downstream deal). Returns the closed recommendation, or ``None`` if no
+    matching active recommendation was found. Best-effort: only transitions
+    recommendations that are still ``accepted``/``generated``.
+
+    This is a pure lifecycle writer — it does NOT create tasks, opportunities,
+    or quotes, and does not touch the outreach send path.
+    """
+    q = db.query(Recommendation)
+    if recommendation_id is not None:
+        q = q.filter(Recommendation.id == recommendation_id)
+    elif sales_task_id is not None:
+        q = q.filter(Recommendation.sales_task_id == sales_task_id)
+    elif opportunity_id is not None:
+        q = q.filter(Recommendation.opportunity_id == opportunity_id)
+    else:
+        return None
+
+    rec = q.filter(Recommendation.status.in_(REC_ACTIVE_STATUSES)).first()
+    if rec is None:
+        return None
+    rec.status = REC_STATUS_COMPLETED
+    rec.completed_at = _utcnow()
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+def expire_stale_recommendations(
+    db: Session, *, company_id: int
+) -> int:
+    """Expire ``generated`` recommendations superseded by a newer one.
+
+    For each (company_id, action) pair, all but the most-recent ``generated``
+    recommendation are flipped to ``expired`` (with ``expired_at``) so that only
+    the latest suggestion remains active. Recommendations already ``accepted`` /
+    ``completed`` are left untouched (they represent taken action).
+
+    Returns the number of recommendations expired.
+    """
+    latest = (
+        db.query(Recommendation)
+        .filter(
+            Recommendation.company_id == company_id,
+            Recommendation.status == REC_STATUS_GENERATED,
+        )
+        .order_by(Recommendation.id.desc())
+        .all()
+    )
+    # Keep one (the highest id) per (company_id, action) group.
+    keep_ids = set()
+    seen_actions = set()
+    for rec in latest:
+        key = (company_id, rec.action)
+        if key not in seen_actions:
+            seen_actions.add(key)
+            keep_ids.add(rec.id)
+
+    to_expire = [
+        rec
+        for rec in latest
+        if rec.id not in keep_ids
+    ]
+    now = _utcnow()
+    for rec in to_expire:
+        rec.status = REC_STATUS_EXPIRED
+        rec.expired_at = now
+        db.add(rec)
+    if to_expire:
+        db.commit()
+    return len(to_expire)

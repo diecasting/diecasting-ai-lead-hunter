@@ -124,11 +124,13 @@ def _serialize_hot_lead(signal: ConversionSignal, company_name: Optional[str] = 
     )
 
 
-def _accept_recommendation(db: Session, *, lead_id: int, action: str) -> None:
+def _accept_recommendation(db: Session, *, lead_id: int, action: str) -> Optional[Recommendation]:
     """Mark the latest ``generated`` Recommendation for (lead, action) accepted.
 
-    Best-effort: if no generated recommendation exists (e.g. recompute never ran
-    for this lead), nothing is marked and the accept flow continues unchanged.
+    Returns the accepted :class:`Recommendation` (so the caller can link the
+    resulting SalesTask via ``sales_task_id``), or ``None`` if no generated
+    recommendation exists (e.g. recompute never ran for this lead) — the accept
+    flow then continues unchanged.
     """
     rec = (
         db.query(Recommendation)
@@ -141,11 +143,12 @@ def _accept_recommendation(db: Session, *, lead_id: int, action: str) -> None:
         .first()
     )
     if rec is None:
-        return
+        return None
     rec.status = REC_STATUS_ACCEPTED
     rec.accepted_at = datetime.now(timezone.utc)
     db.add(rec)
     db.commit()
+    return rec
 
 
 # ---------------------------------------------------------------------------
@@ -267,11 +270,12 @@ def accept_recommendation(
     # Phase 15.4.1: mark the latest generated Recommendation for this action
     # as accepted. This is the auditable lifecycle event; the SalesTask path
     # below is unchanged.
-    _accept_recommendation(db, lead_id=lead.id, action=payload.action)
+    rec = _accept_recommendation(db, lead_id=lead.id, action=payload.action)
 
     try:
         task, already_exists = conv_execution.create_task_from_recommendation(
-            db, lead, signal, payload.action, force=payload.force
+            db, lead, signal, payload.action, force=payload.force,
+            recommendation=rec,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

@@ -1,4 +1,4 @@
-"""Recommendation ORM model (Phase 15.4.1 Recommendation Lifecycle).
+"""Recommendation ORM model (Phase 15.4.1 + 15.4.2 Recommendation Lifecycle).
 
 A :class:`Recommendation` is a *generated* conversion-intelligence suggestion for
 a lead, produced whenever :meth:`app.conversion.service.ConversionService.recompute`
@@ -7,15 +7,18 @@ accept flow a first-class, auditable entity to track:
 
   generated  -> created by recompute, not yet acted on
   accepted   -> a human accepted it via POST /api/conversion/lead/{id}/accept
-  completed  -> the resulting SalesTask was closed (set later, out of 15.4.1 scope)
-  expired    -> superseded by a newer generated recommendation (set later)
+  completed  -> the resulting SalesTask was closed (Phase 15.4.2)
+  expired    -> superseded by a newer generated recommendation (Phase 15.4.2)
 
 One :class:`Recommendation` is created per ``recompute`` call; the accept
-endpoint finds the *latest* ``generated`` one matching the requested action
-and flips it to ``accepted``. No SalesTask is ever created by recompute itself.
+endpoint finds the *latest* ``generated`` one matching the requested action,
+flips it to ``accepted``, and (Phase 15.4.2) links the resulting SalesTask via
+``sales_task_id``. Phase 15.4.2 also adds ``opportunity_id`` so a downstream
+deal can be traced back to the recommendation that spawned it, plus
+``completed_at`` / ``expired_at`` timestamps.
 
-Foreign keys are ``SET NULL`` so deleting the underlying lead / signal never
-orphans a recommendation.
+Foreign keys are ``SET NULL`` so deleting the underlying lead / signal / task /
+opportunity never orphans a recommendation.
 """
 from datetime import datetime, timezone
 
@@ -51,6 +54,9 @@ REC_STATUSES = (
     REC_STATUS_EXPIRED,
 )
 
+# Statuses treated as "active" (still actionable) by downstream queries.
+REC_ACTIVE_STATUSES = (REC_STATUS_GENERATED, REC_STATUS_ACCEPTED)
+
 
 class Recommendation(Base):
     """A generated conversion-intelligence recommendation for a lead."""
@@ -72,6 +78,20 @@ class Recommendation(Base):
         index=True,
     )
 
+    # Phase 15.4.2: downstream closure links (all SET NULL).
+    sales_task_id = Column(
+        Integer,
+        ForeignKey("sales_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    opportunity_id = Column(
+        Integer,
+        ForeignKey("opportunities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     action = Column(String(40), nullable=False, index=True)
     confidence_score = Column(Float, nullable=True)
     status = Column(
@@ -82,10 +102,15 @@ class Recommendation(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    expired_at = Column(DateTime(timezone=True), nullable=True)
 
     company = relationship("CompanyLead", backref="recommendations", lazy="selectin")
     signal = relationship(
         "ConversionSignal", backref="recommendations", lazy="selectin"
+    )
+    task = relationship("SalesTask", backref="recommendations", lazy="selectin")
+    opportunity = relationship(
+        "Opportunity", backref="recommendations", lazy="selectin"
     )
 
     def __repr__(self) -> str:  # pragma: no cover
