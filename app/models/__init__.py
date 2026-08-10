@@ -9,6 +9,7 @@ from app.models.company_discovery import CompanyDiscovery
 from app.models.company_document import CompanyDocument
 from app.models.contact import Contact
 from app.models.contact_discovery_log import ContactDiscoveryLog
+from app.models.conversion_signal import ConversionSignal
 from app.models.crawl_task import CrawlTask
 from app.models.discovery_job import DiscoveryJob, DiscoveryTask
 from app.models.discovery_schedule import DiscoverySchedule
@@ -77,6 +78,7 @@ __all__ = [
     "ReplyAnalysis",
     "ReplyRFQExtraction",
     "SalesTask",
+    "ConversionSignal",
     "Unsubscribe",
     "QuoraQuestion",
     "ContentArticle",
