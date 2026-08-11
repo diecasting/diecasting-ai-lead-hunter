@@ -90,6 +90,17 @@ class CompanyLead(Base):
     last_activity_time = Column(DateTime(timezone=True), nullable=True)
     next_followup_date = Column(DateTime(timezone=True), nullable=True)
 
+    # Phase 16.3: Intent Aggregation Layer — deterministic snapshot of the
+    # signal_events ledger (populated by scripts/recompute_intent.py / API).
+    # NOT derived from lead_score / sales_priority; aggregation is read-only
+    # w.r.t. those fields. All nullable so the snapshot can fill incrementally.
+    buying_intent_score = Column(Integer, nullable=True, index=True)  # 0-100
+    timing_score = Column(Integer, nullable=True, index=True)         # 0-100
+    intent_temperature = Column(String(10), nullable=True, index=True)  # HOT/WARM/COOL/COLD/NONE
+    last_signal_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    intent_source_count = Column(Integer, nullable=True)
+    intent_sources = Column(Text, nullable=True)  # JSON-encoded list[str] of source ids
+
     # Phase 3 Stage 1: CRM data model upgrade
     do_not_contact = Column(
         Boolean, nullable=False, default=False, server_default="0", index=True
